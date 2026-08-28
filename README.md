@@ -1,3 +1,8 @@
+### ☕ Support / Donation
+If you like this project and want to support my work, you can donate via USDT (TRC20):
+
+TRZb5ANp6rLCYP1cND4KpaxHVWvPTQyKkc       
+
 ```markdown
 # 🚀 Autonomous Local Modular AI Agent
 
