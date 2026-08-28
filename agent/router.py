@@ -60,14 +60,17 @@ class Router:
         if any(w in query_lower for w in ["calculate", "math", "حساب", "+", "-", "*", "/"]):
             return {"use_tool": True, "tool": "calculator", "arguments": {"expression": text}}
 
-        # 6. Memory
+        # 6. Memory. Explicit storage language wins over retrieval words that
+        # may appear inside the memory itself (for example, "my favorite ...").
         memory_words = ["remember", "recall", "memory", "what do you remember", "what do you know about me", "what did you remember", "retrieve", "remember about me", "what is my", "what's my", "tell me about me", "my favorite", "شنو كتفكر", "شنو كتعرف عليا", "شكون أنا", "حفظ", "ذاكرة"]
         if any(w in query_lower for w in memory_words):
+            store_prefixes = ["remember that ", "remember ", "please remember that ", "please remember "]
+            explicit_store = any(query_lower.startswith(prefix) for prefix in store_prefixes)
             retrieval_patterns = ["what do you remember", "what do you know about me", "what did you remember", "recall", "retrieve", "remember about me", "what is my", "what's my", "tell me about me", "my favorite", "شنو كتفكر", "شنو كتعرف عليا", "شكون أنا"]
-            action = "retrieve" if any(w in query_lower for w in retrieval_patterns) else "store"
+            action = "store" if explicit_store else ("retrieve" if any(w in query_lower for w in retrieval_patterns) else "store")
             memory_text = text
             if action == "store":
-                for prefix in ["remember that ", "remember ", "please remember that ", "please remember "]:
+                for prefix in store_prefixes:
                     if memory_text.lower().startswith(prefix):
                         memory_text = memory_text[len(prefix):].strip()
                         break
