@@ -25,25 +25,23 @@ class EvidenceGuard:
 
         if "python" in q and any(k in q for k in ("latest", "current", "release", "version")):
             blocks = re.split(r"(?=SOURCE \d+ \|)", result)
-            kept = []
+            official = []
             for block in blocks:
                 if not block.strip() or not block.lstrip().startswith("SOURCE"):
                     continue
                 url_match = re.search(r"URL:\s*(\S+)", block)
-                title_match = re.search(r"TITLE:\s*(.*)", block)
                 url = url_match.group(1) if url_match else ""
-                title = title_match.group(1).lower() if title_match else ""
                 domain = cls._domain(url)
-                if domain in cls.PRIMARY_DOMAINS["python"] or "python" in title:
-                    kept.append((0 if domain in cls.PRIMARY_DOMAINS["python"] else 1, block))
-            kept.sort(key=lambda item: item[0])
-            if kept:
+                if domain in cls.PRIMARY_DOMAINS["python"]:
+                    official.append(block)
+
+            if official:
                 return (
                     f"RESEARCH QUERY: {query}\n"
-                    "EVIDENCE_GUARD: Only the sources below are admissible. "
-                    "For Python release/version questions, python.org is authoritative. "
+                    "EVIDENCE_GUARD: Only authoritative Python sources below are admissible. "
+                    "For Python release/version questions, python.org and docs.python.org are authoritative. "
                     "Do not use model memory or unrelated ecosystem projects.\n"
-                    + "\n".join(block for _, block in kept[:3])
+                    + "\n".join(official[:3])
                 )
         return result
 
