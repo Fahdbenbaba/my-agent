@@ -12,8 +12,16 @@ def main():
     router = Router()
 
     # AgentCore is the single source of truth for registered skills.
-    # This prevents name mismatches between Router and main.py.
-    tools = agent.skills
+    # Backward-compatible aliases keep older router names working too.
+    tools = dict(agent.skills)
+    aliases = {
+        "git": "git_manager",
+        "database": "database_manager",
+        "browser": "browser_automation",
+    }
+    for alias, real_name in aliases.items():
+        if real_name in tools:
+            tools[alias] = tools[real_name]
 
     print("🚀 Full Master Agent (All Skills Integrated) is Online! (Type 'exit' to quit)\n" + "-" * 60)
 
@@ -23,7 +31,6 @@ def main():
             if user_query.strip().lower() == "exit":
                 print("Goodbye!")
                 break
-
             if not user_query.strip():
                 continue
 
@@ -37,17 +44,16 @@ def main():
 
                 if tool_name in tools:
                     tool_result = tools[tool_name].execute(arguments)
-
                     synthesis_prompt = f"""
 The user asked: "{user_query}"
 The tool returned this result: "{tool_result}"
-Task: Write a natural, direct, and helpful response to the user based ONLY on this tool result.
-Do not invent facts, tool actions, errors, or results that are not present in the tool result.
+Task: Write a natural, direct, and helpful response based ONLY on this tool result.
+Do not invent facts, actions, errors, or results that are not present in the tool result.
 Do not mention technical tool names unless the user asked about them.
 """
                     response = agent.run(synthesis_prompt)
                 else:
-                    response = f"Error: Tool '{tool_name}' is not registered. Available tools: {', '.join(sorted(tools))}"
+                    response = f"Error: Tool '{tool_name}' is not registered. Available tools: {', '.join(sorted(agent.skills))}"
             else:
                 response = agent.run(user_query)
 
