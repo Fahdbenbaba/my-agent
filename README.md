@@ -1,7 +1,8 @@
-### ☕ Support / Donation
-If you like this project and want to support my work, you can donate via USDT (TRC20):
+بان لي بلي قسم التبرع (Donation) تسلق للفوق فوق العنوان الرئيسي ديال البروجيكت، داكشي علاش خربق الشكل ديال الصفحة كيف ما واضح في الصورة.
 
-TRZb5ANp6rLCYP1cND4KpaxHVWvPTQyKkc       
+من الأحسن تخلي التبرع ديما في **آخر الصفحة (Bottom)** باش البروجيكت يبان بروفيشيونال ومرتب.
+
+هز هاد الكود كامل كيما هو، مسح داكشي القديم في الـ README، ولصق هاد النسخة المقادة:
 
 ```markdown
 # 🚀 Autonomous Local Modular AI Agent
@@ -96,25 +97,12 @@ python main.py
 
 
 
-## 💡 Usage Example
+---
 
-```text
-🚀 Full Master Agent (All Skills Integrated) is Online! (Type 'exit' to quit)
-------------------------------------------------------------
-You: your name is jilabi baby remember this
+### ☕ Support / Donation
 
-[Agent analyzing & routing...]
-🔧 Executing skill: memory
-Agent:
-Memory successfully stored with ID: c53e1c93-f354-411f-81e3-0af2149e0a3b
-------------------------------------------------------------
-You: whats your name ?
-
-[Agent analyzing & routing...]
-Agent:
-Your name is jilabi baby, as you requested me to remember earlier!
-
-```
+If you like this project and want to support my work, you can donate via USDT (TRC20):
+`TRZb5ANp6rLCYP1cND4KpaxHVwVPtQyKkc`
 
 ```
 
