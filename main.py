@@ -5,30 +5,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from agent.core import AgentCore
 from agent.router import Router
-from skills.calculator import CalculatorSkill
-from skills.file_manager import FileManagerSkill
-from skills.memory_skill import MemorySkill
-from skills.web_search_skill import WebSearchSkill
-from skills.git_skill import GitSkill
-from skills.database_skill import DatabaseSkill
-from skills.browser_skill import BrowserSkill
-from skills.python_sandbox import PythonSandboxSkill
 
 
 def main():
     agent = AgentCore(model_name="qwen3:1.7b")
     router = Router()
 
-    tools = {
-        "calculator": CalculatorSkill(),
-        "file_manager": FileManagerSkill(),
-        "memory": MemorySkill(),
-        "web_search": WebSearchSkill(),
-        "git": GitSkill(),
-        "database": DatabaseSkill(),
-        "browser": BrowserSkill(),
-        "python_sandbox": PythonSandboxSkill(),
-    }
+    # AgentCore is the single source of truth for registered skills.
+    # This prevents name mismatches between Router and main.py.
+    tools = agent.skills
 
     print("🚀 Full Master Agent (All Skills Integrated) is Online! (Type 'exit' to quit)\n" + "-" * 60)
 
@@ -55,12 +40,14 @@ def main():
 
                     synthesis_prompt = f"""
 The user asked: "{user_query}"
-The tool "{tool_name}" returned this result: "{tool_result}"
-Task: Write a natural, direct, and helpful response to the user based on this tool result. Do not mention technical tool names, just answer naturally.
+The tool returned this result: "{tool_result}"
+Task: Write a natural, direct, and helpful response to the user based ONLY on this tool result.
+Do not invent facts, tool actions, errors, or results that are not present in the tool result.
+Do not mention technical tool names unless the user asked about them.
 """
                     response = agent.run(synthesis_prompt)
                 else:
-                    response = f"Error: Tool '{tool_name}' not found."
+                    response = f"Error: Tool '{tool_name}' is not registered. Available tools: {', '.join(sorted(tools))}"
             else:
                 response = agent.run(user_query)
 
