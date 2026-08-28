@@ -2,6 +2,7 @@ import os
 import importlib
 import inspect
 import json
+import re
 from models.ollama_client import OllamaClient
 from skills.base_skill import BaseSkill
 from agent.evidence_guard import EvidenceGuard
@@ -65,6 +66,20 @@ class AgentCore:
                 return {"query": arguments}
         return {"query": str(arguments)}
 
+    @staticmethod
+    def _deterministic_web_answer(query: str, evidence: str):
+        """Return a direct answer for verified current Python release facts."""
+        q = query.lower()
+        if not ("python" in q and any(k in q for k in ("latest", "current", "release", "version"))):
+            return None
+        match = re.search(r"VERIFIED_FACT:\\s*Latest Python(?:\\s+3)? release[^\\n:]*:\\s*Python\\s+(3\\.\\d+\\.\\d+)", evidence, flags=re.IGNORECASE)
+        if not match:
+            return None
+        version = match.group(1)
+        urls = re.findall(r"URL:\\s*(https?://\\S+)", evidence)
+        official_url = next((u for u in urls if "python.org" in u.lower()), "https://www.python.org/")
+        return f"The latest stable Python release is Python {version}. Source: {official_url}"
+
     def _execute_tool_call(self, tool_call):
         function = tool_call.get("function", {}) if isinstance(tool_call, dict) else {}
         name = function.get("name")
@@ -107,6 +122,9 @@ class AgentCore:
                     tool_name = function.get("name", "unknown")
                     if tool_name == "web_search":
                         web_evidence_seen = True
+                        direct_answer = self._deterministic_web_answer(user_query, result)
+                        if direct_answer:
+                            return direct_answer
                     messages.append({"role": "tool", "content": result, "name": tool_name})
 
                 if web_evidence_seen:
