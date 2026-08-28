@@ -1,10 +1,12 @@
 import os
+from pathlib import Path
+
 from skills.base_skill import BaseSkill
 
 
 class FileManagerSkill(BaseSkill):
     name = "file_manager"
-    description = "Use this tool to read the contents of a text file on the local machine."
+    description = "Safely list, read, and create text files in the agent workspace."
     schema = {
         "type": "function",
         "function": {
@@ -13,23 +15,63 @@ class FileManagerSkill(BaseSkill):
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["list", "read", "create"],
+                        "description": "File operation to perform.",
+                    },
                     "filepath": {
                         "type": "string",
-                        "description": "The path of the file to read (relative or absolute)",
-                    }
+                        "description": "Path relative to the agent workspace.",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Text content used when action is create.",
+                    },
                 },
-                "required": ["filepath"],
+                "required": ["action"],
             },
         },
     }
 
-    def execute(self, arguments: dict) -> str:
-        filepath = arguments.get("filepath", "")
-        try:
-            if not os.path.exists(filepath):
-                return f"Error: File '{filepath}' not found."
+    def __init__(self):
+        self.workspace = Path.cwd().resolve()
 
-            with open(filepath, "r", encoding="utf-8") as f:
-                return f.read()
+    def _safe_path(self, filepath: str) -> Path:
+        path = (self.workspace / filepath).resolve()
+        if path != self.workspace and self.workspace not in path.parents:
+            raise ValueError("Path must stay inside the agent workspace.")
+        return path
+
+    def execute(self, arguments: dict) -> str:
+        if not isinstance(arguments, dict):
+            return "File Manager Error: arguments must be a dictionary."
+
+        action = str(arguments.get("action", "")).strip().lower()
+
+        try:
+            if action == "list":
+                items = sorted(p.name for p in self.workspace.iterdir())
+                return "Files and folders:\n" + ("\n".join(items) if items else "(empty)")
+
+            filepath = str(arguments.get("filepath", "")).strip()
+            if not filepath:
+                return "File Manager Error: filepath is required."
+
+            path = self._safe_path(filepath)
+
+            if action == "read":
+                if not path.is_file():
+                    return f"Error: File '{filepath}' not found."
+                return path.read_text(encoding="utf-8")
+
+            if action == "create":
+                content = str(arguments.get("content", ""))
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
+                return f"File created successfully: {path.relative_to(self.workspace)}"
+
+            return "File Manager Error: action must be 'list', 'read', or 'create'."
+
         except Exception as e:
-            return f"Error reading file: {str(e)}"
+            return f"File Manager Error: {str(e)}"
