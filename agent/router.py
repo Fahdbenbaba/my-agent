@@ -7,8 +7,6 @@ class Router:
         query_lower = text.lower()
 
         # 1. Python execution must take priority over calculator keywords.
-        # Example: "Run Python code: print(10 * 20)" contains "*" and
-        # "calculate"-like language, but the requested operation is execution.
         python_patterns = [
             "run python", "python code", "python script", "run script",
             "python sandbox", "execute python", "execute code", "run code",
@@ -23,22 +21,23 @@ class Router:
                 match = re.search(r"(?:run|execute)\s+(?:python\s+)?(?:code|script)?\s*[:\-]?\s*(.*)$", text, re.IGNORECASE | re.DOTALL)
                 if match and match.group(1).strip():
                     code = match.group(1).strip()
+            return {"use_tool": True, "tool": "python_sandbox", "arguments": {"code": code}}
 
-            return {
-                "use_tool": True,
-                "tool": "python_sandbox",
-                "arguments": {"code": code},
-            }
+        # 2. Browser/navigation must take priority over calculator because URLs
+        # contain characters such as '/', '-', and '.'.
+        url_match = re.search(r"https?://\S+", text, re.IGNORECASE)
+        browser_patterns = [
+            "open url", "open website", "open site", "open http", "open https",
+            "browse to", "visit", "go to", "browser", "موقع", "متصفح"
+        ]
+        if url_match or any(w in query_lower for w in browser_patterns):
+            return {"use_tool": True, "tool": "browser", "arguments": {"url": url_match.group(0).rstrip(".,)"] if url_match else text}}
 
-        # 2. Calculator
+        # 3. Calculator
         if any(w in query_lower for w in ["calculate", "math", "حساب", "+", "-", "*", "/"]):
-            return {
-                "use_tool": True,
-                "tool": "calculator",
-                "arguments": {"expression": text},
-            }
+            return {"use_tool": True, "tool": "calculator", "arguments": {"expression": text}}
 
-        # 3. Memory
+        # 4. Memory
         memory_words = [
             "remember", "recall", "memory", "what do you remember",
             "what do you know about me", "what did you remember",
@@ -61,30 +60,16 @@ class Router:
                     if memory_text.lower().startswith(prefix):
                         memory_text = memory_text[len(prefix):].strip()
                         break
-            return {
-                "use_tool": True,
-                "tool": "memory",
-                "arguments": {"action": action, "text": memory_text},
-            }
+            return {"use_tool": True, "tool": "memory", "arguments": {"action": action, "text": memory_text}}
 
-        # 4. File Manager — structured routing for create/read/list.
+        # 5. File Manager
         file_words = ["file", "files", "dir", "directory", "folder", "show", "list", "create file", "make a file", "write to", "read file", "ملف", "ملفات"]
         if any(w in query_lower for w in file_words):
             create_match = re.search(
                 r"(?:create|make|write)\s+(?:a\s+)?file\s+(?:called|named)?\s*['\"]?([^'\"\s]+)['\"]?\s+(?:with|containing)\s+(?:the\s+)?(?:text|content)?\s*[:=]?\s*['\"]?(.*?)['\"]?$",
-                text,
-                re.IGNORECASE,
-            )
+                text, re.IGNORECASE)
             if create_match:
-                return {
-                    "use_tool": True,
-                    "tool": "file_manager",
-                    "arguments": {
-                        "action": "create",
-                        "filepath": create_match.group(1).strip(),
-                        "content": create_match.group(2).strip().strip("'\""),
-                    },
-                }
+                return {"use_tool": True, "tool": "file_manager", "arguments": {"action": "create", "filepath": create_match.group(1).strip(), "content": create_match.group(2).strip().strip("'\"")}}
             if any(w in query_lower for w in ["list", "show", "files", "directory", "folder", "dir"]):
                 return {"use_tool": True, "tool": "file_manager", "arguments": {"action": "list", "filepath": "."}}
             read_match = re.search(r"(?:read|open|show)\s+(?:the\s+)?file\s+['\"]?([^'\"\s]+)", text, re.IGNORECASE)
@@ -92,20 +77,16 @@ class Router:
                 return {"use_tool": True, "tool": "file_manager", "arguments": {"action": "read", "filepath": read_match.group(1).strip()}}
             return {"use_tool": True, "tool": "file_manager", "arguments": {"action": "list", "filepath": "."}}
 
-        # 5. Web Search
+        # 6. Web Search
         if any(w in query_lower for w in ["search", "google", "web", "بحث", "ابحث"]):
             return {"use_tool": True, "tool": "web_search", "arguments": {"query": text}}
 
-        # 6. Git Skill
+        # 7. Git
         if any(w in query_lower for w in ["git", "commit", "repo", "github"]):
             return {"use_tool": True, "tool": "git", "arguments": {"query": text}}
 
-        # 7. Database Skill
+        # 8. Database
         if any(w in query_lower for w in ["db", "database", "sql", "sqlite", "قاعدة"]):
             return {"use_tool": True, "tool": "database", "arguments": {"query": text}}
-
-        # 8. Browser Skill
-        if any(w in query_lower for w in ["browser", "open url", "site", "موقع", "متصفح"]):
-            return {"use_tool": True, "tool": "browser", "arguments": {"query": text}}
 
         return {"use_tool": False}
