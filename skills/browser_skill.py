@@ -17,17 +17,17 @@ class BrowserSkill(BaseSkill):
                     "action": {
                         "type": "string",
                         "enum": ["get_text", "screenshot"],
-                        "description": "The action to perform on the page.",
+                        "description": "The action to perform on the page. Defaults to get_text.",
                     },
                 },
-                "required": ["url", "action"],
+                "required": ["url"],
             },
         },
     }
 
     def execute(self, arguments: dict) -> str:
-        url = arguments.get("url")
-        action = arguments.get("action")
+        url = arguments.get("url") if isinstance(arguments, dict) else None
+        action = arguments.get("action", "get_text") if isinstance(arguments, dict) else "get_text"
         if not url:
             return "Error: No URL provided."
 
@@ -35,7 +35,7 @@ class BrowserSkill(BaseSkill):
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
                 page = browser.new_page()
-                page.goto(url, timeout=60000)
+                page.goto(url, wait_until="domcontentloaded", timeout=60000)
 
                 if action == "screenshot":
                     path = "screenshot.png"
@@ -45,6 +45,6 @@ class BrowserSkill(BaseSkill):
 
                 content = page.inner_text("body")
                 browser.close()
-                return content[:3000] + ("..." if len(content) > 3000 else "")
+                return content[:5000] + ("..." if len(content) > 5000 else "")
         except Exception as e:
             return f"Browser Automation Error: {str(e)}"
