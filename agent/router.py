@@ -10,32 +10,40 @@ class Router:
                 "arguments": {"expression": query.strip()},
             }
 
-        # 2. File Manager
-        elif any(w in query_lower for w in ["file", "files", "dir", "show", "list", "ملف", "ملفات"]):
-            return {"use_tool": True, "tool": "file_manager", "arguments": {"query": query}}
-
-        # 3. Memory
-        elif any(w in query_lower for w in ["remember", "recall", "memory", "what", "who", "whats", "شكون", "شنو", "حفظ", "ذاكرة"]):
-            is_retrieval = any(
-                w in query_lower
-                for w in [
-                    "what do you remember",
-                    "what do you know about me",
-                    "what did you remember",
-                    "recall",
-                    "retrieve",
-                    "remember about me",
-                    "شنو كتفكر",
-                    "شنو كتعرف عليا",
-                    "شكون أنا",
-                ]
-            )
+        # 2. Memory — check before generic words such as "what" or "show".
+        memory_words = [
+            "remember", "recall", "memory", "what do you remember",
+            "what do you know about me", "what did you remember",
+            "retrieve", "remember about me", "what is my", "what's my",
+            "tell me about me", "my favorite", "شنو كتفكر", "شنو كتعرف عليا",
+            "شكون أنا", "حفظ", "ذاكرة"
+        ]
+        if any(w in query_lower for w in memory_words):
+            retrieval_patterns = [
+                "what do you remember", "what do you know about me",
+                "what did you remember", "recall", "retrieve", "remember about me",
+                "what is my", "what's my", "tell me about me", "my favorite",
+                "شنو كتفكر", "شنو كتعرف عليا", "شكون أنا"
+            ]
+            is_retrieval = any(w in query_lower for w in retrieval_patterns)
             action = "retrieve" if is_retrieval else "store"
+
+            text = query.strip()
+            if action == "store":
+                for prefix in ["remember that ", "remember ", "please remember that ", "please remember "]:
+                    if text.lower().startswith(prefix):
+                        text = text[len(prefix):].strip()
+                        break
+
             return {
                 "use_tool": True,
                 "tool": "memory",
-                "arguments": {"action": action, "text": query},
+                "arguments": {"action": action, "text": text},
             }
+
+        # 3. File Manager
+        elif any(w in query_lower for w in ["file", "files", "dir", "show", "list", "ملف", "ملفات"]):
+            return {"use_tool": True, "tool": "file_manager", "arguments": {"query": query}}
 
         # 4. Web Search
         elif any(w in query_lower for w in ["search", "google", "web", "بحث", "ابحث"]):
