@@ -6,7 +6,7 @@ class Router:
         text = query.strip()
         query_lower = text.lower()
 
-        # 1. Python execution must take priority over calculator keywords.
+        # 1. Python execution has priority over calculator keywords.
         python_patterns = [
             "run python", "python code", "python script", "run script",
             "python sandbox", "execute python", "execute code", "run code",
@@ -14,24 +14,31 @@ class Router:
         ]
         if any(w in query_lower for w in python_patterns):
             code = text
-            match = re.search(r"(?:python\s*(?:code|script)?\s*[:\-]?\s*)(.*)$", text, re.IGNORECASE | re.DOTALL)
+            match = re.search(
+                r"(?:python\s*(?:code|script)?\s*[:\-]?\s*)(.*)$",
+                text, re.IGNORECASE | re.DOTALL
+            )
             if match and match.group(1).strip():
                 code = match.group(1).strip()
             else:
-                match = re.search(r"(?:run|execute)\s+(?:python\s+)?(?:code|script)?\s*[:\-]?\s*(.*)$", text, re.IGNORECASE | re.DOTALL)
+                match = re.search(
+                    r"(?:run|execute)\s+(?:python\s+)?(?:code|script)?\s*[:\-]?\s*(.*)$",
+                    text, re.IGNORECASE | re.DOTALL
+                )
                 if match and match.group(1).strip():
                     code = match.group(1).strip()
             return {"use_tool": True, "tool": "python_sandbox", "arguments": {"code": code}}
 
-        # 2. Browser/navigation must take priority over calculator because URLs
-        # contain characters such as '/', '-', and '.'.
+        # 2. Browser/navigation has priority over calculator. URLs contain
+        # characters such as '/', '-', and '.'.
         url_match = re.search(r"https?://\S+", text, re.IGNORECASE)
         browser_patterns = [
             "open url", "open website", "open site", "open http", "open https",
             "browse to", "visit", "go to", "browser", "موقع", "متصفح"
         ]
         if url_match or any(w in query_lower for w in browser_patterns):
-            return {"use_tool": True, "tool": "browser", "arguments": {"url": url_match.group(0).rstrip(".,)"] if url_match else text}}
+            url = url_match.group(0).rstrip(".,)") if url_match else text
+            return {"use_tool": True, "tool": "browser", "arguments": {"url": url}}
 
         # 3. Calculator
         if any(w in query_lower for w in ["calculate", "math", "حساب", "+", "-", "*", "/"]):
@@ -40,10 +47,9 @@ class Router:
         # 4. Memory
         memory_words = [
             "remember", "recall", "memory", "what do you remember",
-            "what do you know about me", "what did you remember",
-            "retrieve", "remember about me", "what is my", "what's my",
-            "tell me about me", "my favorite", "شنو كتفكر", "شنو كتعرف عليا",
-            "شكون أنا", "حفظ", "ذاكرة"
+            "what do you know about me", "what did you remember", "retrieve",
+            "remember about me", "what is my", "what's my", "tell me about me",
+            "my favorite", "شنو كتفكر", "شنو كتعرف عليا", "شكون أنا", "حفظ", "ذاكرة"
         ]
         if any(w in query_lower for w in memory_words):
             retrieval_patterns = [
@@ -63,13 +69,20 @@ class Router:
             return {"use_tool": True, "tool": "memory", "arguments": {"action": action, "text": memory_text}}
 
         # 5. File Manager
-        file_words = ["file", "files", "dir", "directory", "folder", "show", "list", "create file", "make a file", "write to", "read file", "ملف", "ملفات"]
+        file_words = [
+            "file", "files", "dir", "directory", "folder", "show", "list",
+            "create file", "make a file", "write to", "read file", "ملف", "ملفات"
+        ]
         if any(w in query_lower for w in file_words):
             create_match = re.search(
                 r"(?:create|make|write)\s+(?:a\s+)?file\s+(?:called|named)?\s*['\"]?([^'\"\s]+)['\"]?\s+(?:with|containing)\s+(?:the\s+)?(?:text|content)?\s*[:=]?\s*['\"]?(.*?)['\"]?$",
-                text, re.IGNORECASE)
+                text, re.IGNORECASE
+            )
             if create_match:
-                return {"use_tool": True, "tool": "file_manager", "arguments": {"action": "create", "filepath": create_match.group(1).strip(), "content": create_match.group(2).strip().strip("'\"")}}
+                return {"use_tool": True, "tool": "file_manager", "arguments": {
+                    "action": "create", "filepath": create_match.group(1).strip(),
+                    "content": create_match.group(2).strip().strip("'\"")
+                }}
             if any(w in query_lower for w in ["list", "show", "files", "directory", "folder", "dir"]):
                 return {"use_tool": True, "tool": "file_manager", "arguments": {"action": "list", "filepath": "."}}
             read_match = re.search(r"(?:read|open|show)\s+(?:the\s+)?file\s+['\"]?([^'\"\s]+)", text, re.IGNORECASE)
