@@ -1,4 +1,3 @@
-# main.py
 import os
 import sys
 
@@ -15,11 +14,11 @@ from skills.database_skill import DatabaseSkill
 from skills.browser_skill import BrowserSkill
 from skills.python_sandbox import PythonSandboxSkill
 
+
 def main():
     agent = AgentCore(model_name="qwen3:1.7b")
     router = Router()
-    
-    # ربط جميع الأدوات المتوفرة في المشروع
+
     tools = {
         "calculator": CalculatorSkill(),
         "file_manager": FileManagerSkill(),
@@ -28,51 +27,52 @@ def main():
         "git": GitSkill(),
         "database": DatabaseSkill(),
         "browser": BrowserSkill(),
-        "python_sandbox": PythonSandboxSkill()
+        "python_sandbox": PythonSandboxSkill(),
     }
-    
-    print("🚀 Full Master Agent (All Skills Integrated) is Online! (Type 'exit' to quit)\n" + "-"*60)
-    
+
+    print("🚀 Full Master Agent (All Skills Integrated) is Online! (Type 'exit' to quit)\n" + "-" * 60)
+
     while True:
         try:
             user_query = input("You: ")
-            if user_query.strip().lower() == 'exit':
+            if user_query.strip().lower() == "exit":
                 print("Goodbye!")
                 break
-                
+
             if not user_query.strip():
                 continue
-                
+
             print("\n[Agent analyzing & routing...]")
             route_decision = router.route(user_query)
-            
+
             if route_decision and route_decision.get("use_tool"):
                 tool_name = route_decision.get("tool")
-                arguments = route_decision.get("arguments")
+                arguments = route_decision.get("arguments", {})
                 print(f"🔧 Executing skill: {tool_name}")
-                
+
                 if tool_name in tools:
-                    # 1. تنفيذ الأداة وجلب النتيجة الخام
-                    tool_result = tools[tool_name].run(arguments)
-                    
-                    # 2. إرسال النتيجة إلى نموذج Qwen لصياغتها بشكل طبيعي للمستخدم
+                    # BaseSkill exposes execute(arguments) as the standard interface.
+                    tool_result = tools[tool_name].execute(arguments)
+
                     synthesis_prompt = f"""
-                    The user asked: "{user_query}"
-                    The tool "{tool_name}" returned this result: "{tool_result}"
-                    Task: Write a natural, direct, and helpful response to the user based on this tool result. Do not mention technical tool names, just answer naturally.
-                    """
+The user asked: "{user_query}"
+The tool "{tool_name}" returned this result: "{tool_result}"
+Task: Write a natural, direct, and helpful response to the user based on this tool result. Do not mention technical tool names, just answer naturally.
+"""
                     response = agent.run(synthesis_prompt)
                 else:
                     response = f"Error: Tool '{tool_name}' not found."
             else:
-                # إذا لم تكن هناك أداة، يجيب النموذج مباشرة
                 response = agent.run(user_query)
-                
-            print(f"\nAgent:\n{response}\n" + "-"*60)
-            
+
+            print(f"\nAgent:\n{response}\n" + "-" * 60)
+
         except KeyboardInterrupt:
             print("\nExiting...")
             break
+        except Exception as e:
+            print(f"\nError: {e}\n" + "-" * 60)
+
 
 if __name__ == "__main__":
     main()
