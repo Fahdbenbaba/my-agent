@@ -1,9 +1,3 @@
-بان لي بلي قسم التبرع (Donation) تسلق للفوق فوق العنوان الرئيسي ديال البروجيكت، داكشي علاش خربق الشكل ديال الصفحة كيف ما واضح في الصورة.
-
-من الأحسن تخلي التبرع ديما في **آخر الصفحة (Bottom)** باش البروجيكت يبان بروفيشيونال ومرتب.
-
-هز هاد الكود كامل كيما هو، مسح داكشي القديم في الـ README، ولصق هاد النسخة المقادة:
-
 ```markdown
 # 🚀 Autonomous Local Modular AI Agent
 
@@ -102,8 +96,8 @@ python main.py
 ### ☕ Support / Donation
 
 If you like this project and want to support my work, you can donate via USDT (TRC20):
-`TRZb5ANp6rLCYP1cND4KpaxHVwVPtQyKkc`
+``
 
 ```
-
+TRZb5ANp6rLCYP1cND4KpaxHVWvPTQyKkc
 ```
