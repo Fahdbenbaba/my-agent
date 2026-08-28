@@ -1,10 +1,12 @@
+import os
 import sqlite3
+
 from skills.base_skill import BaseSkill
 
 
 class DatabaseSkill(BaseSkill):
     name = "database_manager"
-    description = "Execute SQL queries on a local SQLite database to store and retrieve structured data."
+    description = "Create and execute SQL queries on local SQLite databases."
     schema = {
         "type": "function",
         "function": {
@@ -13,27 +15,59 @@ class DatabaseSkill(BaseSkill):
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "The SQL query to execute."}
+                    "action": {
+                        "type": "string",
+                        "enum": ["create_database", "query"],
+                        "description": "Create a database file or execute SQL."
+                    },
+                    "db_path": {
+                        "type": "string",
+                        "description": "SQLite database filename/path. Defaults to agent_memory.db."
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "SQL query to execute when action is query."
+                    }
                 },
-                "required": ["query"],
-            },
-        },
+                "required": ["action"]
+            }
+        }
     }
 
     def __init__(self, db_path="agent_memory.db"):
         self.db_path = db_path
 
     def execute(self, arguments: dict) -> str:
-        query = arguments.get("query")
-        if not query:
-            return "Error: No SQL query provided."
+        action = str(arguments.get("action", "query")).strip().lower()
+        db_path = str(arguments.get("db_path") or self.db_path).strip()
+
+        if not db_path:
+            return "Database Error: No database path provided."
+
+        # Keep database files inside the current workspace.
+        absolute = os.path.abspath(db_path)
+        workspace = os.path.abspath(os.getcwd())
+        if os.path.commonpath([absolute, workspace]) != workspace:
+            return "Database Error: Database path must stay inside the workspace."
 
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            if action == "create_database":
+                with sqlite3.connect(absolute):
+                    pass
+                return f"SQLite database created successfully: {db_path}"
+
+            if action != "query":
+                return "Database Error: action must be 'create_database' or 'query'."
+
+            query = str(arguments.get("query", "")).strip()
+            if not query:
+                return "Database Error: No SQL query provided."
+
+            with sqlite3.connect(absolute) as conn:
                 cursor = conn.cursor()
                 cursor.execute(query)
 
-                if query.strip().lower().startswith("select"):
+                if query.lower().startswith("select"):
                     rows = cursor.fetchall()
                     columns = [description[0] for description in cursor.description]
                     if not rows:
