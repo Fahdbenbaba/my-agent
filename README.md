@@ -1,40 +1,96 @@
-```markdown
-# 🚀 Autonomous Local Modular AI Agent
+# 🚀 My Agent — Local Modular AI Agent
 
-A lightweight, modular, and privacy-first **Autonomous AI Agent** built entirely from scratch in Python. It runs locally using **Ollama (Qwen 1.7B)**, leveraging a smart router pattern to delegate tasks across diverse execution skills, complete with long-term vector memory.
+A **local-first, modular AI agent** built in Python. It uses **Ollama + Qwen 3 (1.7B)** as the local reasoning model and a collection of specialized skills for real task execution.
 
-## 🏗️ System Architecture
+The project is designed around a simple principle:
+
+> **The model decides what should happen; skills perform the actual work; verification checks that the work really happened.**
+
+## ✨ What It Can Do
+
+| Capability | Status |
+|---|---|
+| 🧮 Calculator | ✅ |
+| 🧠 Long-term Memory | ✅ |
+| 📁 File Manager | ✅ |
+| 🐍 Python Sandbox | ✅ |
+| 🌐 Browser Automation | ✅ |
+| 🔎 Web Search + Evidence Grounding | ✅ |
+| 🔧 Git Operations | ✅ |
+| 🗄️ SQLite Database | ✅ |
+| 🔁 Multi-step execution | ✅ |
+| 🛡️ Action verification | ✅ |
+
+### Example
+
+The agent can handle a task such as:
 
 ```text
-                  AI AGENT
-                     │
-           ┌─────────┴─────────┐
-           │                   │
-       Qwen 1.7B             Tools
-        (Brain)                │
-           │         ┌─────────┼─────────┐
-           │         │         │         │
-        Planning   Search   Browser    Code
-           │         │         │         │
-           │       Files      APIs    Database
-           │         │         │         │
-           └─────────┴─────────┴─────────┘
-                     │
-                   Memory
-                     │
-               Knowledge Base
-                     │
-                Final Result
-
+Go to https://www.python.org, find the latest Python release,
+and create a file called python_latest.txt containing the version
+and the page title.
 ```
 
-## ✨ Core Features
+The workflow can use the browser to inspect the real page, extract the information, create the requested file, read it back, and verify the result before reporting success.
 
-* **Modular Skill Architecture:** Clean separation of concerns where each tool/skill operates independently inside the `skills/` directory.
-* **Local-First & Private:** Fully executed locally via Ollama without relying on expensive cloud APIs, ensuring complete data privacy.
-* **Smart Orchestrator/Router:** Analyzes incoming user prompts and routes them dynamically to the correct specialized execution skill.
-* **Long-Term Vector Memory:** Powered by **ChromaDB** to store, index, and recall past interactions and contextual data seamlessly.
-* **Multi-Tool Integration:** Includes built-in tools for file management, code sandboxing, web searching, database queries, git operations, and calculations.
+## 🏗️ Architecture
+
+```text
+                         USER
+                           │
+                           ▼
+                    ┌─────────────┐
+                    │  AGENT CORE │
+                    │ Orchestrator│
+                    └──────┬──────┘
+                           │
+                           ▼
+                    ┌─────────────┐
+                    │    ROUTER   │
+                    │ Intent →    │
+                    │ Skill       │
+                    └──────┬──────┘
+                           │
+          ┌────────────────┼────────────────┐
+          ▼                ▼                ▼
+      ┌────────┐      ┌─────────┐      ┌────────┐
+      │ Search │      │ Browser │      │ Files  │
+      └────────┘      └─────────┘      └────────┘
+          │                │                │
+          ├────────┬───────┴───────┬────────┤
+          ▼        ▼               ▼        ▼
+      Calculator Memory       Python      Git
+                                  │
+                                  ▼
+                              Database
+                                  │
+                                  ▼
+                         ┌────────────────┐
+                         │   VERIFICATION │
+                         │ Check real     │
+                         │ execution      │
+                         └───────┬────────┘
+                                 │
+                                 ▼
+                            FINAL RESULT
+```
+
+## 🧩 Skill Architecture
+
+Every skill follows the same interface through an abstract base class:
+
+```python
+class BaseSkill(ABC):
+    name: str
+    description: str
+    schema: dict
+
+    @abstractmethod
+    def execute(self, arguments: dict) -> str:
+        ...
+```
+
+This keeps the system modular: a new skill can be added without rewriting the entire agent.
 
 ## 📁 Project Structure
 
@@ -42,62 +98,158 @@ A lightweight, modular, and privacy-first **Autonomous AI Agent** built entirely
 my-agent/
 │
 ├── agent/
-│   ├── core.py          # Core logic for Qwen LLM integration
-│   └── router.py        # Intent classification and tool routing
+│   ├── core.py              # Agent orchestration and execution
+│   ├── router.py            # Intent and skill routing
+│   └── evidence_guard.py    # Evidence / grounding checks
 │
 ├── skills/
-│   ├── base_skill.py    # Abstract base class for all tools
-│   ├── memory_skill.py  # ChromaDB vector memory handler
-│   ├── calculator.py    # Math calculation utility
-│   ├── file_manager.py  # File system interaction tool
-│   ├── python_sandbox.py# Secure code execution environment
-│   └── ...              # Other modular integrations
+│   ├── base_skill.py        # Abstract skill interface
+│   ├── calculator.py        # Mathematical calculations
+│   ├── memory_skill.py      # Persistent vector memory
+│   ├── file_manager.py      # File operations
+│   ├── python_sandbox.py    # Python execution
+│   ├── browser_skill.py     # Browser automation
+│   ├── web_search_skill.py  # Web research
+│   ├── git_skill.py         # Git operations
+│   └── database_skill.py    # SQLite operations
 │
-├── agent_memory/        # Persistent vector database storage
-├── main.py              # Main application entry point & synthesis loop
-└── README.md            # Project documentation
-
+├── agent_memory/            # Persistent ChromaDB data
+├── models/                  # Local LLM client
+├── main.py                  # CLI entry point
+└── README.md
 ```
 
-## ⚙️ Installation & Setup
+## ⚙️ Requirements
 
-1. **Clone the repository:**
+- Python 3.10+
+- Ollama
+- Qwen 3 1.7B
+- Git
+- Playwright + Chromium for browser automation
+
+## 🚀 Installation
+
+### 1. Clone
+
 ```bash
-git clone [https://github.com/Fahdbenbaba/my-agent.git](https://github.com/Fahdbenbaba/my-agent.git)
+git clone https://github.com/Fahdbenbaba/my-agent.git
 cd my-agent
-
 ```
 
+### 2. Install Python dependencies
 
-2. **Install dependencies:**
+If the repository contains a `requirements.txt` file:
+
 ```bash
-pip install chromadb requests
-
+pip install -r requirements.txt
 ```
 
+Otherwise install the core dependencies used by the project:
 
-3. **Ensure Ollama is running locally with Qwen:**
 ```bash
-ollama run qwen3:1.7b
-
+pip install chromadb requests playwright
 ```
 
+### 3. Install the browser
 
-4. **Run the Agent:**
+```bash
+python -m playwright install chromium
+```
+
+### 4. Pull the local model
+
+```bash
+ollama pull qwen3:1.7b
+```
+
+Make sure Ollama is running locally on its default endpoint:
+
+```text
+http://localhost:11434
+```
+
+### 5. Run
+
 ```bash
 python main.py
-
 ```
 
+## 🧪 Example Prompts
 
-
----
-
-### ☕ Support / Donation
-
-If you like this project and want to support my work, you can donate via USDT (TRC20):
-``
-
+```text
+2 + 2
 ```
-TRZb5ANp6rLCYP1cND4KpaxHVWvPTQyKkc
+
+```text
+Remember that my favorite programming language is Python.
 ```
+
+```text
+What is my favorite programming language?
+```
+
+```text
+Run Python code: print(10 * 20)
+```
+
+```text
+Create a file called test.txt with the text Hello Agent
+```
+
+```text
+Show me the git status of this repository
+```
+
+```text
+Create a SQLite database called test.db
+```
+
+```text
+Open https://www.python.org and show me the page title
+```
+
+```text
+Search the web for the latest Python release
+```
+
+## 🔐 Local-First Design
+
+The reasoning model runs locally through Ollama. This makes the project useful for experimentation with local AI agents without requiring a paid hosted LLM API for the core reasoning loop.
+
+Web access and browser automation are separate execution capabilities, while evidence checks help prevent unsupported current-information claims from being presented as verified facts.
+
+## 🛠️ Current Scope
+
+This is a **V1 agent foundation** rather than a production autonomous system. The current architecture focuses on reliable modular skills, routing, execution, grounding, and verification.
+
+Planned future improvements include:
+
+- Planner / task decomposition
+- Task graphs and dependency management
+- Automatic retry and recovery
+- More browser actions
+- More search providers
+- Stronger sandbox isolation
+- Automated tests and CI
+- Better observability and execution logs
+
+## 📌 Portfolio Highlights
+
+This project demonstrates practical experience with:
+
+- Python application architecture
+- Abstract Base Classes and modular design
+- Local LLM integration
+- Tool / skill routing
+- Browser automation with Playwright
+- Web research and evidence grounding
+- Vector memory with ChromaDB
+- File-system automation
+- Python execution
+- Git and SQLite integration
+- Multi-step task execution
+- Action verification
+
+## 📄 License
+
+Add your preferred open-source license before publishing the project for reuse by others.
