@@ -10,6 +10,8 @@ class BaseSkill(ABC):
     - description: what the skill does
     - schema: JSON-compatible tool schema
     - execute(): the method used to run the skill
+
+    `run()` is kept as a backward-compatible alias for older callers.
     """
 
     name: str
@@ -22,3 +24,7 @@ class BaseSkill(ABC):
         Execute the skill with the provided arguments.
         """
         pass
+
+    def run(self, arguments: dict) -> str:
+        """Backward-compatible alias for execute()."""
+        return self.execute(arguments)
