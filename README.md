@@ -250,6 +250,16 @@ This project demonstrates practical experience with:
 - Multi-step task execution
 - Action verification
 
+## ☕ Support the Project
+
+If you find this project useful and would like to support its development, you can optionally make a donation.
+
+**USDT (TRC20)**
+
+> Donation address: **Add your address here manually**
+
+Thank you for supporting the project ❤️
+
 ## 📄 License
 
 Add your preferred open-source license before publishing the project for reuse by others.
