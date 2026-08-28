@@ -1,57 +1,54 @@
-# skills/git_skill.py
 import subprocess
 from skills.base_skill import BaseSkill
 
+
 class GitSkill(BaseSkill):
-    def get_name(self) -> str:
-        return "git_manager"
+    name = "git_manager"
+    description = "Execute approved Git commands in the current workspace repository."
+    schema = {
+        "type": "function",
+        "function": {
+            "name": "git_manager",
+            "description": description,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "Git subcommand and arguments, e.g. 'status' or 'diff'.",
+                    }
+                },
+                "required": ["command"],
+            },
+        },
+    }
 
-    def get_description(self) -> str:
-        return "Execute Git commands (like status, add, commit, log, diff) in the current workspace repository."
+    ALLOWED_COMMANDS = {
+        "status", "diff", "log", "show", "branch", "remote", "rev-parse",
+        "add", "commit", "restore", "switch", "checkout",
+    }
 
-    def get_schema(self) -> dict:
-        return {
-            "type": "function",
-            "function": {
-                "name": self.get_name(),
-                "description": self.get_description(),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "command": {
-                            "type": "string",
-                            "description": "The specific git subcommand and arguments to run, e.g., 'status', 'add .', 'commit -m \"msg\"'."
-                        }
-                    },
-                    "required": ["command"]
-                }
-            }
-        }
-
-    def execute(self, args: dict) -> str:
-        cmd_arg = args.get("command")
-        if not cmd_arg:
+    def execute(self, arguments: dict) -> str:
+        command = arguments.get("command", "").strip()
+        if not command:
             return "Error: No git command provided."
 
-        # Security check to ensure it's a git command
-        full_cmd = f"git {cmd_arg}"
-        
+        parts = command.split()
+        if not parts or parts[0] not in self.ALLOWED_COMMANDS:
+            return f"Error: Git command '{parts[0] if parts else ''}' is not allowed."
+
         try:
             result = subprocess.run(
-                full_cmd,
-                shell=True,
+                ["git", *parts],
+                shell=False,
                 capture_output=True,
                 text=True,
-                timeout=15
+                timeout=15,
             )
-            
             output = result.stdout.strip()
             error = result.stderr.strip()
-            
             if result.returncode == 0:
-                return output if output else "Git command executed successfully with no output."
-            else:
-                return f"Git Error:\n{error if error else output}"
-                
+                return output or "Git command executed successfully with no output."
+            return f"Git Error:\n{error or output}"
         except Exception as e:
             return f"Execution Exception: {str(e)}"
