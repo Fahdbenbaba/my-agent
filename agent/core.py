@@ -72,11 +72,11 @@ class AgentCore:
         q = query.lower()
         if not ("python" in q and any(k in q for k in ("latest", "current", "release", "version"))):
             return None
-        match = re.search(r"VERIFIED_FACT:\\s*Latest Python(?:\\s+3)? release[^\\n:]*:\\s*Python\\s+(3\\.\\d+\\.\\d+)", evidence, flags=re.IGNORECASE)
+        match = re.search(r"VERIFIED_FACT:\s*Latest Python(?:\s+3)? release[^\n:]*:\s*Python\s+(3\.\d+\.\d+)", evidence, flags=re.IGNORECASE)
         if not match:
             return None
         version = match.group(1)
-        urls = re.findall(r"URL:\\s*(https?://\\S+)", evidence)
+        urls = re.findall(r"URL:\s*(https?://\S+)", evidence)
         official_url = next((u for u in urls if "python.org" in u.lower()), "https://www.python.org/")
         return f"The latest stable Python release is Python {version}. Source: {official_url}"
 
