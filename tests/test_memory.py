@@ -34,4 +34,4 @@ def test_memory_store():
 def test_memory_retrieve_without_memories():
     skill, collection = make_skill()
     collection.count.return_value = 0
-    assert skill.execute({"action": "retrieve", "text": "Python"}) == "No relevant memories found."
+    assert skill.execute({"action": "retrieve", "text": "Python"}) == "No sufficiently relevant memories found."
