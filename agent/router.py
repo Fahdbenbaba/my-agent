@@ -16,7 +16,26 @@ class Router:
 
         # 3. Memory
         elif any(w in query_lower for w in ["remember", "recall", "memory", "what", "who", "whats", "شكون", "شنو", "حفظ", "ذاكرة"]):
-            return {"use_tool": True, "tool": "memory", "arguments": {"query": query}}
+            is_retrieval = any(
+                w in query_lower
+                for w in [
+                    "what do you remember",
+                    "what do you know about me",
+                    "what did you remember",
+                    "recall",
+                    "retrieve",
+                    "remember about me",
+                    "شنو كتفكر",
+                    "شنو كتعرف عليا",
+                    "شكون أنا",
+                ]
+            )
+            action = "retrieve" if is_retrieval else "store"
+            return {
+                "use_tool": True,
+                "tool": "memory",
+                "arguments": {"action": action, "text": query},
+            }
 
         # 4. Web Search
         elif any(w in query_lower for w in ["search", "google", "web", "بحث", "ابحث"]):
