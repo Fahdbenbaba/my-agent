@@ -51,7 +51,6 @@ def main():
                 print(f"🔧 Executing skill: {tool_name}")
 
                 if tool_name in tools:
-                    # BaseSkill exposes execute(arguments) as the standard interface.
                     tool_result = tools[tool_name].execute(arguments)
 
                     synthesis_prompt = f"""
