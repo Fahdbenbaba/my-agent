@@ -256,7 +256,7 @@ If you find this project useful and would like to support its development, you c
 
 **USDT (TRC20)**
 
-> Donation address: **Add your address here manually**
+> Donation address: TRZb5ANp6rLCYP1cND4KpaxHVWvPTQyKkc
 
 Thank you for supporting the project ❤️
 
