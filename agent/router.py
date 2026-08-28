@@ -1,3 +1,6 @@
+import re
+
+
 class Router:
     def route(self, query: str) -> dict:
         query_lower = query.lower().strip()
@@ -10,7 +13,7 @@ class Router:
                 "arguments": {"expression": query.strip()},
             }
 
-        # 2. Memory — check before generic words such as "what" or "show".
+        # 2. Memory
         memory_words = [
             "remember", "recall", "memory", "what do you remember",
             "what do you know about me", "what did you remember",
@@ -41,28 +44,64 @@ class Router:
                 "arguments": {"action": action, "text": text},
             }
 
-        # 3. File Manager
-        elif any(w in query_lower for w in ["file", "files", "dir", "show", "list", "ملف", "ملفات"]):
-            return {"use_tool": True, "tool": "file_manager", "arguments": {"query": query}}
+        # 3. File Manager — structured routing for create/read/list.
+        file_words = ["file", "files", "dir", "directory", "folder", "show", "list", "create file", "make a file", "write to", "read file", "ملف", "ملفات"]
+        if any(w in query_lower for w in file_words):
+            # CREATE: Create a file called NAME with the text CONTENT
+            create_match = re.search(
+                r"(?:create|make|write)\s+(?:a\s+)?file\s+(?:called|named)?\s*['\"]?([^'\"\s]+)['\"]?\s+(?:with|containing)\s+(?:the\s+)?(?:text|content)?\s*[:=]?\s*['\"]?(.*?)['\"]?$",
+                query.strip(),
+                re.IGNORECASE,
+            )
+            if create_match:
+                filepath = create_match.group(1).strip()
+                content = create_match.group(2).strip().strip("'\"")
+                return {
+                    "use_tool": True,
+                    "tool": "file_manager",
+                    "arguments": {"action": "create", "filepath": filepath, "content": content},
+                }
+
+            if any(w in query_lower for w in ["list", "show", "files", "directory", "folder", "dir"]):
+                return {
+                    "use_tool": True,
+                    "tool": "file_manager",
+                    "arguments": {"action": "list", "filepath": "."},
+                }
+
+            # READ a named file when possible.
+            read_match = re.search(r"(?:read|open|show)\s+(?:the\s+)?file\s+['\"]?([^'\"\s]+)", query.strip(), re.IGNORECASE)
+            if read_match:
+                return {
+                    "use_tool": True,
+                    "tool": "file_manager",
+                    "arguments": {"action": "read", "filepath": read_match.group(1).strip()},
+                }
+
+            return {
+                "use_tool": True,
+                "tool": "file_manager",
+                "arguments": {"action": "list", "filepath": "."},
+            }
 
         # 4. Web Search
-        elif any(w in query_lower for w in ["search", "google", "web", "بحث", "ابحث"]):
+        if any(w in query_lower for w in ["search", "google", "web", "بحث", "ابحث"]):
             return {"use_tool": True, "tool": "web_search", "arguments": {"query": query}}
 
         # 5. Git Skill
-        elif any(w in query_lower for w in ["git", "commit", "repo", "github"]):
+        if any(w in query_lower for w in ["git", "commit", "repo", "github"]):
             return {"use_tool": True, "tool": "git", "arguments": {"query": query}}
 
         # 6. Database Skill
-        elif any(w in query_lower for w in ["db", "database", "sql", "sqlite", "قاعدة"]):
+        if any(w in query_lower for w in ["db", "database", "sql", "sqlite", "قاعدة"]):
             return {"use_tool": True, "tool": "database", "arguments": {"query": query}}
 
         # 7. Browser Skill
-        elif any(w in query_lower for w in ["browser", "open url", "site", "موقع", "متصفح"]):
+        if any(w in query_lower for w in ["browser", "open url", "site", "موقع", "متصفح"]):
             return {"use_tool": True, "tool": "browser", "arguments": {"query": query}}
 
         # 8. Python Sandbox Skill
-        elif any(w in query_lower for w in ["python", "code", "run script", "sandbox", "سكربت"]):
+        if any(w in query_lower for w in ["python", "code", "run script", "sandbox", "سكربت"]):
             return {"use_tool": True, "tool": "python_sandbox", "arguments": {"query": query}}
 
         return {"use_tool": False}
