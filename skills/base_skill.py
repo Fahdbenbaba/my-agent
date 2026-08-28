@@ -1,16 +1,24 @@
-class BaseSkill:
-    name = ""
-    description = ""
+from abc import ABC, abstractmethod
 
-    def get_schema(self) -> dict:
-        """
-        Return the JSON schema used by the LLM
-        to understand this tool.
-        """
-        raise NotImplementedError
 
+class BaseSkill(ABC):
+    """
+    Base class for all Agent skills.
+
+    Every skill must define:
+    - name: unique tool name
+    - description: what the skill does
+    - schema: JSON-compatible tool schema
+    - execute(): the method used to run the skill
+    """
+
+    name: str
+    description: str
+    schema: dict
+
+    @abstractmethod
     def execute(self, arguments: dict) -> str:
         """
-        Execute the tool and return a string result.
+        Execute the skill with the provided arguments.
         """
-        raise NotImplementedError
+        pass
