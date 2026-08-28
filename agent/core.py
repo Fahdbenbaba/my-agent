@@ -9,9 +9,9 @@ from agent.evidence_guard import EvidenceGuard
 
 
 class AgentCore:
-    """Core agent loop with dynamic skill discovery, tool calling, and evidence controls."""
+    """Core agent loop with dynamic skills, verified workflows, and evidence controls."""
 
-    MAX_TOOL_STEPS = 6
+    MAX_TOOL_STEPS = 8
 
     def __init__(self, model_name="qwen3:1.7b"):
         self.model_name = model_name
@@ -24,23 +24,18 @@ class AgentCore:
         for filename in os.listdir(skills_dir):
             if not filename.endswith(".py") or filename in {"__init__.py", "base_skill.py"}:
                 continue
-            module_name = f"skills.{filename[:-3]}"
             try:
-                module = importlib.import_module(module_name)
+                module = importlib.import_module(f"skills.{filename[:-3]}")
                 for _, obj in inspect.getmembers(module, inspect.isclass):
                     if not issubclass(obj, BaseSkill) or obj is BaseSkill:
                         continue
-                    skill_instance = obj()
-                    skill_name = getattr(skill_instance, "name", "")
-                    if not skill_name:
-                        raise ValueError("Skill is missing required 'name' attribute")
-                    if not isinstance(getattr(skill_instance, "description", None), str):
-                        raise ValueError(f"Skill '{skill_name}' has invalid description")
-                    if not isinstance(getattr(skill_instance, "schema", None), dict):
-                        raise ValueError(f"Skill '{skill_name}' has invalid schema")
-                    if skill_name in self.skills:
-                        raise ValueError(f"Duplicate skill name: {skill_name}")
-                    self.skills[skill_name] = skill_instance
+                    skill = obj()
+                    name = getattr(skill, "name", "")
+                    if not name or not isinstance(getattr(skill, "description", None), str) or not isinstance(getattr(skill, "schema", None), dict):
+                        raise ValueError(f"Invalid skill metadata: {filename}")
+                    if name in self.skills:
+                        raise ValueError(f"Duplicate skill name: {name}")
+                    self.skills[name] = skill
             except Exception as e:
                 print(f"Error loading skill {filename}: {e}")
 
@@ -48,10 +43,7 @@ class AgentCore:
         tools = []
         for skill in self.skills.values():
             schema = skill.schema
-            if "function" in schema:
-                tools.append(schema)
-            else:
-                tools.append({"type": "function", "function": {"name": skill.name, "description": skill.description, "parameters": schema}})
+            tools.append(schema if "function" in schema else {"type": "function", "function": {"name": skill.name, "description": skill.description, "parameters": schema}})
         return tools
 
     @staticmethod
@@ -60,48 +52,96 @@ class AgentCore:
             return arguments
         if isinstance(arguments, str):
             try:
-                parsed = json.loads(arguments)
-                return parsed if isinstance(parsed, dict) else {"query": arguments}
+                value = json.loads(arguments)
+                return value if isinstance(value, dict) else {"query": arguments}
             except json.JSONDecodeError:
                 return {"query": arguments}
         return {"query": str(arguments)}
 
     @staticmethod
-    def _deterministic_web_answer(query: str, evidence: str):
-        """Return a direct answer for verified current Python release facts."""
+    def _deterministic_web_answer(query, evidence):
         q = query.lower()
-        if not ("python" in q and any(k in q for k in ("latest", "current", "release", "version"))):
+        if "python" not in q or not any(k in q for k in ("latest", "current", "release", "version")):
             return None
-        match = re.search(r"VERIFIED_FACT:\s*Latest Python(?:\s+3)? release[^\n:]*:\s*Python\s+(3\.\d+\.\d+)", evidence, flags=re.IGNORECASE)
+        match = re.search(r"VERIFIED_FACT:\s*Latest Python(?:\s+3)? release[^\n:]*:\s*Python\s+(3\.\d+\.\d+)", evidence, re.I)
         if not match:
             return None
-        version = match.group(1)
         urls = re.findall(r"URL:\s*(https?://\S+)", evidence)
-        official_url = next((u for u in urls if "python.org" in u.lower()), "https://www.python.org/")
-        return f"The latest stable Python release is Python {version}. Source: {official_url}"
+        source = next((u for u in urls if "python.org" in u.lower()), "https://www.python.org/")
+        return f"The latest stable Python release is Python {match.group(1)}. Source: {source}"
 
-    def _execute_tool_call(self, tool_call):
-        function = tool_call.get("function", {}) if isinstance(tool_call, dict) else {}
-        name = function.get("name")
-        arguments = self._normalize_arguments(function.get("arguments", {}))
+    @staticmethod
+    def _extract_url(text):
+        match = re.search(r"https?://[^\s,)>]+", text)
+        return match.group(0).rstrip(".,)") if match else None
+
+    @staticmethod
+    def _extract_txt_filename(text):
+        match = re.search(r"\b([A-Za-z0-9_.-]+\.txt)\b", text, re.I)
+        return match.group(1) if match else None
+
+    def _execute_skill(self, name, arguments):
         if name not in self.skills:
             return f"Tool Error: Unknown tool '{name}'."
         try:
             result = self.skills[name].execute(arguments)
             if name == "web_search":
-                query = arguments.get("query", "")
-                result = EvidenceGuard.filter_web_evidence(str(query), result)
-            return result
+                result = EvidenceGuard.filter_web_evidence(str(arguments.get("query", "")), str(result))
+            return str(result)
         except Exception as e:
             return f"Tool Error in '{name}': {e}"
 
+    def _execute_tool_call(self, tool_call):
+        function = tool_call.get("function", {}) if isinstance(tool_call, dict) else {}
+        return self._execute_skill(function.get("name"), self._normalize_arguments(function.get("arguments", {})))
+
+    def _run_verified_browser_file_workflow(self, query):
+        """Execute browser -> extract -> file create -> read-back verification when explicitly requested."""
+        q = query.lower()
+        if "http" not in q or not any(x in q for x in ("go to", "open", "visit")):
+            return None
+        if not any(x in q for x in ("create a file", "create file", "save it to", "write it to")):
+            return None
+        url = self._extract_url(query)
+        filename = self._extract_txt_filename(query)
+        browser_name = "browser_automation" if "browser_automation" in self.skills else "browser"
+        if not url or not filename or browser_name not in self.skills or "file_manager" not in self.skills:
+            return None
+
+        browser_result = self._execute_skill(browser_name, {"url": url, "action": "get_info"})
+        if not browser_result.startswith("BROWSER_SUCCESS"):
+            return f"Workflow failed: browser step did not succeed.\n{browser_result}"
+
+        title_match = re.search(r"^TITLE:\s*(.+)$", browser_result, re.M)
+        title = title_match.group(1).strip() if title_match else "Unknown"
+        version_match = re.search(r"\bPython\s+(3\.\d+\.\d+)\b", browser_result, re.I)
+        version = version_match.group(1) if version_match else None
+        if "latest python release" in q and not version:
+            return "Workflow failed verification: no Python release version was found on the loaded page."
+
+        content = ((f"Python Version: {version}\n") if version else "") + f"Page Title: {title}"
+        create_result = self._execute_skill("file_manager", {"action": "create", "filepath": filename, "content": content})
+        if not create_result.startswith("File created successfully:"):
+            return f"Workflow failed: file creation was not confirmed.\n{create_result}"
+
+        read_result = self._execute_skill("file_manager", {"action": "read", "filepath": filename})
+        if read_result != content:
+            return f"Workflow failed verification: '{filename}' was not read back with the expected content."
+
+        return f"Task completed and verified.\nPython version: {version or 'not found'}\nPage title: {title}\nFile created and verified: {filename}"
+
     def run(self, user_query: str) -> str:
+        workflow = self._run_verified_browser_file_workflow(user_query)
+        if workflow:
+            return workflow
+
         messages = [
             {"role": "system", "content": (
-                "You are an autonomous local AI agent. Use tools when useful. You may call "
-                "multiple tools in sequence. After observing tool results, continue until the "
-                "task is complete. Do not claim a tool was used unless you actually called it. "
-                "Reply in the same language or dialect as the user."
+                "You are an autonomous local AI agent. Use tools when useful and call multiple "
+                "tools in sequence when the task requires multiple actions. NEVER claim a tool "
+                "action happened unless its actual result confirms success. For side effects, "
+                "verify them with a follow-up tool when possible. If a tool fails, report the "
+                "failure. Reply in the user's language or dialect."
             )},
             {"role": "user", "content": user_query},
         ]
@@ -115,27 +155,20 @@ class AgentCore:
                 tool_calls = assistant_message.get("tool_calls") or []
                 if not tool_calls:
                     return assistant_message.get("content", "").strip()
-
                 for tool_call in tool_calls:
                     result = self._execute_tool_call(tool_call)
                     function = tool_call.get("function", {})
-                    tool_name = function.get("name", "unknown")
-                    if tool_name == "web_search":
+                    name = function.get("name", "unknown")
+                    if name == "web_search":
                         web_evidence_seen = True
-                        direct_answer = self._deterministic_web_answer(user_query, result)
-                        if direct_answer:
-                            return direct_answer
-                    messages.append({"role": "tool", "content": result, "name": tool_name})
-
+                        direct = self._deterministic_web_answer(user_query, result)
+                        if direct:
+                            return direct
+                    messages.append({"role": "tool", "content": result, "name": name})
                 if web_evidence_seen:
-                    messages.append({
-                        "role": "system",
-                        "content": EvidenceGuard.final_instruction(user_query, result),
-                    })
+                    messages.append({"role": "system", "content": EvidenceGuard.final_instruction(user_query, result)})
 
-            final_message = self.client.chat(
-                messages + [{"role": "system", "content": "Give the best final answer now. Do not call any more tools."}]
-            )
+            final_message = self.client.chat(messages + [{"role": "system", "content": "Give the final answer. Do not claim any unverified action succeeded."}])
             return final_message.get("content", "").strip()
         except Exception as e:
             return f"Error: {e}"
