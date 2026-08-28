@@ -256,10 +256,10 @@ If you find this project useful and would like to support its development, you c
 
 **USDT (TRC20)**
 
-> Donation address: TRZb5ANp6rLCYP1cND4KpaxHVWvPTQyKkc
+> Donation address: **Add your address here manually**
 
 Thank you for supporting the project ❤️
 
 ## 📄 License
 
-Add your preferred open-source license before publishing the project for reuse by others.
+This project is licensed under the **MIT License**. See the [`LICENSE`](LICENSE) file for the full license text.
