@@ -1,115 +1,78 @@
 # main.py
-import json
-from models.ollama_client import OllamaClient
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from agent.core import AgentCore
+from agent.router import Router
 from skills.calculator import CalculatorSkill
 from skills.file_manager import FileManagerSkill
 from skills.memory_skill import MemorySkill
-from skills.web_search import WebSearchSkill
-from skills.python_sandbox import PythonSandboxSkill
-from skills.browser_skill import BrowserSkill
-from skills.database_skill import DatabaseSkill
+from skills.web_search_skill import WebSearchSkill
 from skills.git_skill import GitSkill
+from skills.database_skill import DatabaseSkill
+from skills.browser_skill import BrowserSkill
+from skills.python_sandbox import PythonSandboxSkill
 
 def main():
-    client = OllamaClient(model_name="qwen3:1.7b")
-    calc_skill = CalculatorSkill()
-    file_skill = FileManagerSkill()
-    memory_skill = MemorySkill()
-    web_search_skill = WebSearchSkill()
-    python_skill = PythonSandboxSkill()
-    browser_skill = BrowserSkill()
-    db_skill = DatabaseSkill()
-    git_skill = GitSkill()
-
-    available_tools = [
-        calc_skill.get_schema(),
-        file_skill.get_schema(),
-        memory_skill.get_schema(),
-        web_search_skill.get_schema(),
-        python_skill.get_schema(),
-        browser_skill.get_schema(),
-        db_skill.get_schema(),
-        git_skill.get_schema()
-    ]
-
-    print("==========================================")
-    print("   AI Agent Core - Phase 8 (Git/GitHub)")
-    print("==========================================")
-    print("Type 'exit' to stop.\n")
-
-    conversation_history = [
-        {"role": "system", "content": "You are a helpful AI assistant with access to a calculator, file manager, long-term memory, web search, python sandbox, browser automation, database manager, and git integration. Use the git_manager tool when asked to check repository status, commit changes, or view git history."}
-    ]
-
+    agent = AgentCore(model_name="qwen3:1.7b")
+    router = Router()
+    
+    # ربط جميع الأدوات المتوفرة في المشروع
+    tools = {
+        "calculator": CalculatorSkill(),
+        "file_manager": FileManagerSkill(),
+        "memory": MemorySkill(),
+        "web_search": WebSearchSkill(),
+        "git": GitSkill(),
+        "database": DatabaseSkill(),
+        "browser": BrowserSkill(),
+        "python_sandbox": PythonSandboxSkill()
+    }
+    
+    print("🚀 Full Master Agent (All Skills Integrated) is Online! (Type 'exit' to quit)\n" + "-"*60)
+    
     while True:
         try:
-            user_input = input("You: ")
-            if user_input.lower() == 'exit':
+            user_query = input("You: ")
+            if user_query.strip().lower() == 'exit':
+                print("Goodbye!")
                 break
-            if not user_input.strip():
-                continue
-
-            conversation_history.append({"role": "user", "content": user_input})
-
-            print("\n[Agent thinking...]")
-            response = client.chat(messages=conversation_history, tools=available_tools)
-
-            if response.get("tool_calls"):
-                tool_call = response["tool_calls"][0]
-                tool_name = tool_call["function"]["name"]
-                args = tool_call["function"]["arguments"]
-
-                tool_result = ""
-                if tool_name == "calculator":
-                    print(f" > [Executing Tool: Calculator] args: {args}")
-                    tool_result = calc_skill.execute(args)
-                elif tool_name == "file_manager":
-                    print(f" > [Executing Tool: File Manager] args: {args}")
-                    tool_result = file_skill.execute(args)
-                elif tool_name == "memory_tool":
-                    print(f" > [Executing Tool: Memory] args: {args}")
-                    tool_result = memory_skill.execute(args)
-                elif tool_name == "web_search":
-                    print(f" > [Executing Tool: Web Search] args: {args}")
-                    tool_result = web_search_skill.execute(args)
-                elif tool_name == "python_sandbox":
-                    print(f" > [Executing Tool: Python Sandbox] args: {args}")
-                    tool_result = python_skill.execute(args)
-                elif tool_name == "browser_automation":
-                    print(f" > [Executing Tool: Browser Automation] args: {args}")
-                    tool_result = browser_skill.execute(args)
-                elif tool_name == "database_manager":
-                    print(f" > [Executing Tool: Database Manager] args: {args}")
-                    tool_result = db_skill.execute(args)
-                elif tool_name == "git_manager":
-                    print(f" > [Executing Tool: Git Manager] args: {args}")
-                    tool_result = git_skill.execute(args)
-
-                print(f" > [Tool Result]: {tool_result}")
-
-                conversation_history.append({
-                    "role": "assistant",
-                    "tool_calls": [tool_call]
-                })
-                conversation_history.append({
-                    "role": "tool",
-                    "content": str(tool_result),
-                    "name": tool_name
-                })
-
-                print("[Agent summarizing result...]\n")
-                final_response = client.chat(messages=conversation_history)
-                assistant_reply = final_response.get("content", "Done.")
-                print(f"Agent: {assistant_reply}\n")
                 
-                conversation_history.append({"role": "assistant", "content": assistant_reply})
+            if not user_query.strip():
+                continue
+                
+            print("\n[Agent analyzing & routing...]")
+            route_decision = router.route(user_query)
+            
+            if route_decision and route_decision.get("use_tool"):
+                tool_name = route_decision.get("tool")
+                arguments = route_decision.get("arguments")
+                print(f"🔧 Executing skill: {tool_name}")
+                
+                if tool_name in tools:
+                    # 1. تنفيذ الأداة وجلب النتيجة الخام
+                    tool_result = tools[tool_name].run(arguments)
+                    
+                    # 2. إرسال النتيجة إلى نموذج Qwen لصياغتها بشكل طبيعي للمستخدم
+                    synthesis_prompt = f"""
+                    The user asked: "{user_query}"
+                    The tool "{tool_name}" returned this result: "{tool_result}"
+                    Task: Write a natural, direct, and helpful response to the user based on this tool result. Do not mention technical tool names, just answer naturally.
+                    """
+                    response = agent.run(synthesis_prompt)
+                else:
+                    response = f"Error: Tool '{tool_name}' not found."
             else:
-                assistant_reply = response.get("content", "")
-                print(f"Agent: {assistant_reply}\n")
-                conversation_history.append({"role": "assistant", "content": assistant_reply})
-
-        except Exception as e:
-            print(f"\n[LLM ERROR] {e}\n")
+                # إذا لم تكن هناك أداة، يجيب النموذج مباشرة
+                response = agent.run(user_query)
+                
+            print(f"\nAgent:\n{response}\n" + "-"*60)
+            
+        except KeyboardInterrupt:
+            print("\nExiting...")
+            break
 
 if __name__ == "__main__":
     main()
