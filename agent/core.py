@@ -9,14 +9,29 @@ from agent.evidence_guard import EvidenceGuard
 
 
 class AgentCore:
-    """Core agent loop with dynamic skills, verified workflows, and evidence controls."""
+    """Core agent with skills, verified workflows, evidence controls, and session memory."""
 
     MAX_TOOL_STEPS = 8
+    MAX_HISTORY_MESSAGES = 12
+
+    SYSTEM_PROMPT = (
+        "You are a helpful, friendly, conversational autonomous AI agent. "
+        "Respond naturally and warmly to greetings and casual questions. "
+        "Do not unnecessarily describe yourself as a language model or give cold "
+        "capability disclaimers when a normal conversational answer is possible. "
+        "Maintain continuity with the recent conversation. If the user refers to "
+        "something said or done earlier, use the conversation history. "
+        "Use tools when useful and call multiple tools in sequence when needed. "
+        "NEVER claim a tool action happened unless its actual result confirms success. "
+        "For side effects, verify them with a follow-up tool when possible. "
+        "If a tool fails, report the failure. Reply in the user's language or dialect."
+    )
 
     def __init__(self, model_name="qwen3:1.7b"):
         self.model_name = model_name
         self.client = OllamaClient(model_name=model_name)
         self.skills = {}
+        self.history = []
         self._load_skills()
 
     def _load_skills(self):
@@ -38,6 +53,14 @@ class AgentCore:
                     self.skills[name] = skill
             except Exception as e:
                 print(f"Error loading skill {filename}: {e}")
+
+    def clear_history(self):
+        self.history.clear()
+
+    def _remember(self, role, content):
+        if content:
+            self.history.append({"role": role, "content": str(content)})
+            self.history = self.history[-self.MAX_HISTORY_MESSAGES:]
 
     def _tool_definitions(self):
         tools = []
@@ -96,7 +119,6 @@ class AgentCore:
         return self._execute_skill(function.get("name"), self._normalize_arguments(function.get("arguments", {})))
 
     def _run_verified_browser_file_workflow(self, query):
-        """Execute browser -> extract -> file create -> read-back verification when explicitly requested."""
         q = query.lower()
         if "http" not in q or not any(x in q for x in ("go to", "open", "visit")):
             return None
@@ -107,46 +129,35 @@ class AgentCore:
         browser_name = "browser_automation" if "browser_automation" in self.skills else "browser"
         if not url or not filename or browser_name not in self.skills or "file_manager" not in self.skills:
             return None
-
         browser_result = self._execute_skill(browser_name, {"url": url, "action": "get_info"})
         if not browser_result.startswith("BROWSER_SUCCESS"):
             return f"Workflow failed: browser step did not succeed.\n{browser_result}"
-
         title_match = re.search(r"^TITLE:\s*(.+)$", browser_result, re.M)
         title = title_match.group(1).strip() if title_match else "Unknown"
         version_match = re.search(r"\bPython\s+(3\.\d+\.\d+)\b", browser_result, re.I)
         version = version_match.group(1) if version_match else None
         if "latest python release" in q and not version:
             return "Workflow failed verification: no Python release version was found on the loaded page."
-
         content = ((f"Python Version: {version}\n") if version else "") + f"Page Title: {title}"
         create_result = self._execute_skill("file_manager", {"action": "create", "filepath": filename, "content": content})
         if not create_result.startswith("File created successfully:"):
             return f"Workflow failed: file creation was not confirmed.\n{create_result}"
-
         read_result = self._execute_skill("file_manager", {"action": "read", "filepath": filename})
         if read_result != content:
             return f"Workflow failed verification: '{filename}' was not read back with the expected content."
-
         return f"Task completed and verified.\nPython version: {version or 'not found'}\nPage title: {title}\nFile created and verified: {filename}"
 
     def run(self, user_query: str) -> str:
         workflow = self._run_verified_browser_file_workflow(user_query)
         if workflow:
+            self._remember("user", user_query)
+            self._remember("assistant", workflow)
             return workflow
 
-        messages = [
-            {"role": "system", "content": (
-                "You are an autonomous local AI agent. Use tools when useful and call multiple "
-                "tools in sequence when the task requires multiple actions. NEVER claim a tool "
-                "action happened unless its actual result confirms success. For side effects, "
-                "verify them with a follow-up tool when possible. If a tool fails, report the "
-                "failure. Reply in the user's language or dialect."
-            )},
-            {"role": "user", "content": user_query},
-        ]
+        messages = [{"role": "system", "content": self.SYSTEM_PROMPT}, *self.history, {"role": "user", "content": user_query}]
         tools = self._tool_definitions()
         web_evidence_seen = False
+        last_result = ""
 
         try:
             for _ in range(self.MAX_TOOL_STEPS):
@@ -154,21 +165,30 @@ class AgentCore:
                 messages.append(assistant_message)
                 tool_calls = assistant_message.get("tool_calls") or []
                 if not tool_calls:
-                    return assistant_message.get("content", "").strip()
+                    response = assistant_message.get("content", "").strip()
+                    self._remember("user", user_query)
+                    self._remember("assistant", response)
+                    return response
                 for tool_call in tool_calls:
                     result = self._execute_tool_call(tool_call)
+                    last_result = result
                     function = tool_call.get("function", {})
                     name = function.get("name", "unknown")
                     if name == "web_search":
                         web_evidence_seen = True
                         direct = self._deterministic_web_answer(user_query, result)
                         if direct:
+                            self._remember("user", user_query)
+                            self._remember("assistant", direct)
                             return direct
                     messages.append({"role": "tool", "content": result, "name": name})
                 if web_evidence_seen:
-                    messages.append({"role": "system", "content": EvidenceGuard.final_instruction(user_query, result)})
+                    messages.append({"role": "system", "content": EvidenceGuard.final_instruction(user_query, last_result)})
 
-            final_message = self.client.chat(messages + [{"role": "system", "content": "Give the final answer. Do not claim any unverified action succeeded."}])
-            return final_message.get("content", "").strip()
+            final_message = self.client.chat(messages + [{"role": "system", "content": "Give the final answer naturally. Do not claim any unverified action succeeded."}])
+            response = final_message.get("content", "").strip()
+            self._remember("user", user_query)
+            self._remember("assistant", response)
+            return response
         except Exception as e:
             return f"Error: {e}"
