@@ -399,6 +399,6 @@ This project is licensed under the **MIT License**. See [`LICENSE`](LICENSE) for
 
 ## 👤 Author
 
-**Fahdbenbaba**
+**JILABI.DEV**
 
 Built with Python, Ollama, Qwen, Playwright, ChromaDB, and a lot of experimentation. 🚀
