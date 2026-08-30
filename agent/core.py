@@ -3,39 +3,36 @@ import importlib
 import inspect
 import json
 import re
+from datetime import datetime, timezone
+from pathlib import Path
+
 from models.ollama_client import OllamaClient
 from skills.base_skill import BaseSkill
 from agent.evidence_guard import EvidenceGuard
 
 
 class AgentCore:
-    """Core agent with skills, verified workflows, evidence controls, and session memory."""
+    """Core agent with skills, verified workflows, evidence controls, and persistent learning context."""
 
     MAX_TOOL_STEPS = 8
     MAX_HISTORY_MESSAGES = 12
-    MAX_JOURNAL_ENTRIES = 8
-    MAX_JOURNAL_CHARS = 24000
+    MAX_JOURNAL_ENTRIES = 12
+    MAX_JOURNAL_CHARS = 32000
 
     SYSTEM_PROMPT = (
         "You are a helpful, friendly, conversational autonomous AI agent. "
         "Respond naturally and warmly to greetings and casual questions. "
-        "Do not unnecessarily describe yourself as a language model or give cold "
-        "capability disclaimers when a normal conversational answer is possible. "
-        "Maintain continuity with the recent conversation. If the user refers to "
-        "something said or done earlier, use the conversation history. "
-        "Use tools when useful and call multiple tools in sequence when needed. "
+        "Maintain continuity with recent conversation. Use tools when useful and call multiple tools in sequence. "
         "NEVER claim a tool action happened unless its actual result confirms success. "
         "For side effects, verify them with a follow-up tool when possible. "
         "If a tool fails, report the failure. Reply in the user's language or dialect. "
-        "You have a skill_learning tool for continuous learning. After a meaningful "
-        "debugging discovery, non-obvious workaround, project-specific pattern, or "
-        "verified tool integration, consider extracting a reusable skill. Be selective: "
-        "do not save ordinary documentation lookups or one-off facts. Search existing "
-        "learned skills before creating a duplicate. Never store credentials, tokens, "
-        "passwords, private keys, or other secrets in learned skills. A learned skill "
-        "must contain a precise trigger, reusable solution, verification evidence, and "
-        "must be grounded in the actual execution/evidence context. Never invent a fix, "
-        "command, configuration, or verification result that is not supported by evidence."
+        "You have a skill_learning tool for continuous learning. After meaningful debugging discoveries, non-obvious workarounds, "
+        "project-specific patterns, or verified tool integrations, consider extracting a reusable skill. "
+        "Before creating a skill, search existing learned skills for duplicates. "
+        "Never invent a fix, command, configuration, or verification result. "
+        "Use the provided verified learning context as the source of truth. "
+        "Never store credentials, tokens, passwords, private keys, or other secrets in learned skills. "
+        "A learned skill must contain a precise trigger, reusable solution, and verification evidence."
     )
 
     def __init__(self, model_name="qwen3:1.7b"):
@@ -44,7 +41,50 @@ class AgentCore:
         self.skills = {}
         self.history = []
         self.execution_journal = []
+        self._journal_path = Path(__file__).resolve().parent.parent / "agent_memory" / "learning_journal.jsonl"
+        self._journal_path.parent.mkdir(parents=True, exist_ok=True)
+        self._load_learning_journal()
         self._load_skills()
+
+    @staticmethod
+    def _redact(text: str, limit=6000) -> str:
+        value = str(text or "")
+        patterns = [
+            r"(?i)(api[_ -]?key|client[_ -]?secret|access[_ -]?token|refresh[_ -]?token|password|authorization)\s*[:=]\s*[^\s]+",
+            r"(?i)bearer\s+[A-Za-z0-9._~+/=-]+",
+            r"-----BEGIN [A-Z ]+PRIVATE KEY-----.*?-----END [A-Z ]+PRIVATE KEY-----",
+            r"(?i)ghp_[A-Za-z0-9]+",
+            r"(?i)github_pat_[A-Za-z0-9_]+",
+        ]
+        for pattern in patterns:
+            value = re.sub(pattern, "[REDACTED_SECRET]", value, flags=re.S)
+        return value[:limit]
+
+    def _load_learning_journal(self):
+        if not self._journal_path.exists():
+            return
+        try:
+            lines = self._journal_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            for line in lines[-self.MAX_JOURNAL_ENTRIES:]:
+                try:
+                    entry = json.loads(line)
+                    text = str(entry.get("text", "")).strip()
+                    if text:
+                        self.execution_journal.append(text)
+                except json.JSONDecodeError:
+                    continue
+        except OSError:
+            pass
+
+    def _persist_journal(self):
+        try:
+            records = [
+                {"timestamp": datetime.now(timezone.utc).isoformat(), "text": self._redact(entry, 7000)}
+                for entry in self.execution_journal[-self.MAX_JOURNAL_ENTRIES:]
+            ]
+            self._journal_path.write_text("\n".join(json.dumps(item, ensure_ascii=False) for item in records) + ("\n" if records else ""), encoding="utf-8")
+        except OSError:
+            pass
 
     def _load_skills(self):
         skills_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "skills")
@@ -69,11 +109,20 @@ class AgentCore:
     def clear_history(self):
         self.history.clear()
         self.execution_journal.clear()
+        self._persist_journal()
 
     def _remember(self, role, content):
         if content:
             self.history.append({"role": role, "content": str(content)})
             self.history = self.history[-self.MAX_HISTORY_MESSAGES:]
+
+    def _record_learning_context(self, kind, text):
+        safe = self._redact(text)
+        if not safe.strip():
+            return
+        self.execution_journal.append(f"{kind}:\n{safe}")
+        self.execution_journal = self.execution_journal[-self.MAX_JOURNAL_ENTRIES:]
+        self._persist_journal()
 
     def _record_execution(self, name, arguments, result):
         entry = (
@@ -81,14 +130,12 @@ class AgentCore:
             f"ARGUMENTS: {json.dumps(arguments, ensure_ascii=False, default=str)}\n"
             f"RESULT:\n{str(result)[:6000]}"
         )
-        self.execution_journal.append(entry)
-        self.execution_journal = self.execution_journal[-self.MAX_JOURNAL_ENTRIES:]
+        self._record_learning_context("EXECUTION", entry)
 
     def _learning_evidence(self):
         if not self.execution_journal:
             return ""
-        text = "\n\n---\n\n".join(self.execution_journal)
-        return text[-self.MAX_JOURNAL_CHARS:]
+        return "\n\n---\n\n".join(self.execution_journal)[-self.MAX_JOURNAL_CHARS:]
 
     def _tool_definitions(self):
         tools = []
@@ -121,13 +168,11 @@ class AgentCore:
         source = next((u for u in urls if "python.org" in u.lower()), "https://www.python.org/")
         return f"The latest stable Python release is Python {match.group(1)}. Source: {source}"
 
-    @staticmethod
-    def _extract_url(text):
+    def _extract_url(self, text):
         match = re.search(r"https?://[^\s,)>]+", text)
         return match.group(0).rstrip(".,)") if match else None
 
-    @staticmethod
-    def _extract_txt_filename(text):
+    def _extract_txt_filename(self, text):
         match = re.search(r"\b([A-Za-z0-9_.-]+\.txt)\b", text, re.I)
         return match.group(1) if match else None
 
@@ -186,6 +231,7 @@ class AgentCore:
         return f"Task completed and verified.\nPython version: {version or 'not found'}\nPage title: {title}\nFile created and verified: {filename}"
 
     def run(self, user_query: str) -> str:
+        self._record_learning_context("USER_REQUEST", user_query)
         workflow = self._run_verified_browser_file_workflow(user_query)
         if workflow:
             self._remember("user", user_query)
@@ -212,6 +258,11 @@ class AgentCore:
                     last_result = result
                     function = tool_call.get("function", {})
                     name = function.get("name", "unknown")
+                    if name == "skill_learning" and str(self._normalize_arguments(function.get("arguments", {})).get("action", "")).lower() == "save":
+                        if result.startswith("SKILL_REJECTED") or result.startswith("SKILL_LEARNING_ERROR"):
+                            self._remember("user", user_query)
+                            self._remember("assistant", result)
+                            return result
                     if name == "web_search":
                         web_evidence_seen = True
                         direct = self._deterministic_web_answer(user_query, result)
