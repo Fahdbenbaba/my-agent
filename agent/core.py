@@ -162,11 +162,7 @@ class AgentCore:
         ))
 
     def _learning_save_from_journal(self):
-        """Save only deterministic, project-specific fixes that are evidenced by the journal.
-
-        This deliberately handles known classes of verified fixes without asking the small
-        local model to invent a structured lesson.
-        """
+        """Save only deterministic, project-specific fixes that are evidenced by the journal."""
         evidence = self._learning_evidence()
         lower = evidence.lower()
         skill = self.skills.get("skill_learning")
@@ -229,11 +225,13 @@ class AgentCore:
         source = next((u for u in urls if "python.org" in u.lower()), "https://www.python.org/")
         return f"The latest stable Python release is Python {match.group(1)}. Source: {source}"
 
-    def _extract_url(self, text):
+    @staticmethod
+    def _extract_url(text):
         match = re.search(r"https?://[^\s,)>]+", text)
         return match.group(0).rstrip(".,)") if match else None
 
-    def _extract_txt_filename(self, text):
+    @staticmethod
+    def _extract_txt_filename(text):
         match = re.search(r"\b([A-Za-z0-9_.-]+\.txt)\b", text, re.I)
         return match.group(1) if match else None
 
