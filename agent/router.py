@@ -99,6 +99,24 @@ class Router:
 
         # 5. OpenConnector runtime.
         if any(w in query_lower for w in ["openconnector", "open connector", "connector health", "connector providers", "connector actions", "connector test", "oauth", "connect github"]):
+            # Explicit action execution must be checked before generic connector-action discovery.
+            execute_match = re.search(
+                r"(?:execute|run|call)\s+(?:openconnector\s+)?(?:action\s+)?([A-Za-z0-9_.:-]+)",
+                text,
+                re.I,
+            )
+            if execute_match and any(w in query_lower for w in ("execute", "run", "call")):
+                action_id = execute_match.group(1).strip()
+                confirm = bool(re.search(r"\b(confirm|confirmed|approved|approval)\b", query_lower))
+                return {
+                    "use_tool": True,
+                    "tool": "open_connector",
+                    "arguments": {
+                        "action": "execute",
+                        "action_id": action_id,
+                        "confirm": confirm,
+                    },
+                }
             if "self test" in query_lower or "self-test" in query_lower or "smoke test" in query_lower or "connector test" in query_lower:
                 action = "self_test"
             elif "health" in query_lower:
