@@ -52,7 +52,6 @@ class Router:
 
         if learning_list_intent or learning_search_intent or learning_save_intent or learning_recall_intent:
             if learning_search_intent or learning_recall_intent:
-                action = "search"
                 search_query = text
                 search_query = re.sub(
                     r"(?i)^.*?\b(?:search|find)\s+(?:a\s+)?learned\s+skill(?:s)?\s*(?:for|about|matching)?\s*",
@@ -60,22 +59,10 @@ class Router:
                     search_query,
                 ).strip()
                 search_query = search_query or text
-                return {
-                    "use_tool": True,
-                    "tool": "skill_learning",
-                    "arguments": {"action": action, "query": search_query},
-                }
+                return {"use_tool": True, "tool": "skill_learning", "arguments": {"action": "search", "query": search_query}}
             if learning_list_intent:
-                return {
-                    "use_tool": True,
-                    "tool": "skill_learning",
-                    "arguments": {"action": "list", "query": text},
-                }
-            return {
-                "use_tool": True,
-                "tool": "skill_learning",
-                "arguments": {"action": "save", "query": text},
-            }
+                return {"use_tool": True, "tool": "skill_learning", "arguments": {"action": "list", "query": text}}
+            return {"use_tool": True, "tool": "skill_learning", "arguments": {"action": "save", "query": text}}
 
         # 4. Agent Reach web/GitHub/YouTube/RSS intent.
         url_match = re.search(r"https?://\S+", text, re.I)
@@ -96,30 +83,25 @@ class Router:
         search_youtube = youtube_intent and any(w in query_lower for w in ["search", "find", "look for", "videos", "video"])
 
         if search_github:
-            search_query = re.sub(r"(?i)\b(?:search|find|look for|look up)\s+(?:on\s+)?github\s*(?:for|:)?\s*", "", text).strip()
-            search_query = search_query or text
+            search_query = re.sub(r"(?i)\b(?:search|find|look for|look up)\s+(?:on\s+)?github\s*(?:for|:)?\s*", "", text).strip() or text
             return {"use_tool": True, "tool": "agent_reach", "arguments": {"action": "github", "query": search_query}}
-
         if github_intent and clean_url:
             return {"use_tool": True, "tool": "agent_reach", "arguments": {"action": "github", "url": clean_url}}
-
         if search_youtube:
-            search_query = re.sub(r"(?i)\b(?:search|find|look for)\s+(?:on\s+)?youtube\s*(?:for|:)?\s*", "", text).strip()
-            search_query = search_query or text
+            search_query = re.sub(r"(?i)\b(?:search|find|look for)\s+(?:on\s+)?youtube\s*(?:for|:)?\s*", "", text).strip() or text
             return {"use_tool": True, "tool": "agent_reach", "arguments": {"action": "youtube", "query": search_query}}
-
         if youtube_intent and clean_url:
             return {"use_tool": True, "tool": "agent_reach", "arguments": {"action": "youtube", "url": clean_url}}
-
         if rss_intent and clean_url:
             return {"use_tool": True, "tool": "agent_reach", "arguments": {"action": "rss", "url": clean_url}}
-
         if read_intent and clean_url:
             return {"use_tool": True, "tool": "agent_reach", "arguments": {"action": "read", "url": clean_url}}
 
         # 5. OpenConnector runtime.
-        if any(w in query_lower for w in ["openconnector", "open connector", "connector health", "connector providers", "connector actions", "oauth", "connect github"]):
-            if "health" in query_lower:
+        if any(w in query_lower for w in ["openconnector", "open connector", "connector health", "connector providers", "connector actions", "connector test", "oauth", "connect github"]):
+            if "self test" in query_lower or "self-test" in query_lower or "smoke test" in query_lower or "connector test" in query_lower:
+                action = "self_test"
+            elif "health" in query_lower:
                 action = "health"
             elif "provider" in query_lower:
                 action = "providers"
@@ -134,20 +116,13 @@ class Router:
             return {"use_tool": True, "tool": "open_connector", "arguments": {"action": action, "query": text}}
 
         # 6. Browser/navigation.
-        browser_patterns = [
-            "open url", "open website", "open site", "open http", "open https",
-            "browse to", "visit", "go to", "browser", "موقع", "متصفح"
-        ]
+        browser_patterns = ["open url", "open website", "open site", "open http", "open https", "browse to", "visit", "go to", "browser", "موقع", "متصفح"]
         if url_match or any(w in query_lower for w in browser_patterns):
             url = clean_url if url_match else text
             return {"use_tool": True, "tool": "browser", "arguments": {"url": url}}
 
         # 7. Database.
-        database_patterns = [
-            "create sqlite database", "create a sqlite database", "create database",
-            "create a database", "database", "sqlite", "sql query", "run sql",
-            "execute sql", "db", "قاعدة بيانات"
-        ]
+        database_patterns = ["create sqlite database", "create a sqlite database", "create database", "create a database", "database", "sqlite", "sql query", "run sql", "execute sql", "db", "قاعدة بيانات"]
         if any(w in query_lower for w in database_patterns):
             sql = text
             create_db = re.search(r"create\s+(?:a\s+)?(?:sqlite\s+)?database\s+(?:called|named)?\s*['\"]?([^'\"\s]+)['\"]?", text, re.I)
@@ -158,11 +133,7 @@ class Router:
             return {"use_tool": True, "tool": "database", "arguments": {"query": sql}}
 
         # 8. Git. Only local git commands here; GitHub research is routed above.
-        git_patterns = [
-            "git status", "git diff", "git log", "git branch", "git commit",
-            "git add", "git restore", "git checkout", "git repo", "git repository",
-            "repository status", "repo status", "git"
-        ]
+        git_patterns = ["git status", "git diff", "git log", "git branch", "git commit", "git add", "git restore", "git checkout", "git repo", "git repository", "repository status", "repo status", "git"]
         if any(w in query_lower for w in git_patterns):
             if "status" in query_lower:
                 command = "status"
@@ -181,19 +152,11 @@ class Router:
             return {"use_tool": True, "tool": "calculator", "arguments": {"expression": text}}
 
         # 10. Memory
-        memory_words = [
-            "remember", "recall", "memory", "what do you remember", "what do you know about me",
-            "what did you remember", "retrieve", "remember about me", "what is my", "what's my",
-            "tell me about me", "my favorite", "شنو كتفكر", "شنو كتعرف عليا", "شكون أنا", "حفظ", "ذاكرة"
-        ]
+        memory_words = ["remember", "recall", "memory", "what do you remember", "what do you know about me", "what did you remember", "retrieve", "remember about me", "what is my", "what's my", "tell me about me", "my favorite", "شنو كتفكر", "شنو كتعرف عليا", "شكون أنا", "حفظ", "ذاكرة"]
         if any(w in query_lower for w in memory_words):
             store_prefixes = ["remember that ", "remember ", "please remember that ", "please remember "]
             explicit_store = any(query_lower.startswith(prefix) for prefix in store_prefixes)
-            retrieval_patterns = [
-                "what do you remember", "what do you know about me", "what did you remember",
-                "recall", "retrieve", "remember about me", "what is my", "what's my",
-                "tell me about me", "my favorite", "شنو كتفكر", "شنو كتعرف عليا", "شكون أنا"
-            ]
+            retrieval_patterns = ["what do you remember", "what do you know about me", "what did you remember", "recall", "retrieve", "remember about me", "what is my", "what's my", "tell me about me", "my favorite", "شنو كتفكر", "شنو كتعرف عليا", "شكون أنا"]
             action = "store" if explicit_store else ("retrieve" if any(w in query_lower for w in retrieval_patterns) else "store")
             memory_text = text
             if action == "store":
