@@ -21,11 +21,19 @@ def test_health_calls_runtime():
     assert session.request.call_args.args[:2] == ("GET", "http://localhost:3000/v1/health")
 
 
+def test_providers_calls_runtime_provider_catalog():
+    session = MagicMock()
+    session.request.return_value = make_response(payload={"success": True, "data": []})
+    result = OpenConnectorSkill(session=session).execute({"action": "providers"})
+    assert '"success": true' in result.lower()
+    assert session.request.call_args.args[:2] == ("GET", "http://localhost:3000/v1/providers")
+
+
 def test_self_test_runs_three_non_destructive_checks():
     session = MagicMock()
     session.request.side_effect = [
         make_response(payload={"success": True}),
-        make_response(payload={"providers": [{"id": "github"}]}),
+        make_response(payload={"success": True, "data": [{"service": "github"}]}),
         make_response(payload={"connections": [{"name": "default"}]}),
     ]
     result = OpenConnectorSkill(session=session).execute({"action": "self_test"})
@@ -34,6 +42,9 @@ def test_self_test_runs_three_non_destructive_checks():
     assert '"check": "catalog"' in result
     assert '"check": "connections"' in result
     assert session.request.call_count == 3
+    calls = session.request.call_args_list
+    assert calls[1].args[:2] == ("GET", "http://localhost:3000/v1/actions")
+    assert calls[2].args[:2] == ("GET", "http://localhost:3000/api/connections")
 
 
 def test_self_test_reports_failure_without_raising():
@@ -42,6 +53,19 @@ def test_self_test_reports_failure_without_raising():
     result = OpenConnectorSkill(session=session).execute({"action": "self_test"})
     assert '"status": "failed"' in result
     assert 'not reachable' in result.lower()
+
+
+def test_self_test_stops_after_catalog_failure():
+    session = MagicMock()
+    session.request.side_effect = [
+        make_response(payload={"success": True}),
+        make_response(status=404, payload={"error": {"code": "not_found", "message": "missing"}}),
+    ]
+    result = OpenConnectorSkill(session=session).execute({"action": "self_test"})
+    assert '"status": "failed"' in result
+    assert '"check": "catalog"' in result
+    assert '"check": "connections"' not in result
+    assert session.request.call_count == 2
 
 
 def test_execute_requires_confirmation_for_write_like_action():
@@ -65,6 +89,7 @@ def test_execute_allows_confirmed_action():
         "confirm": True,
     })
     assert '"sent": true' in result.lower()
+    assert session.request.call_args.args[:2] == ("POST", "http://localhost:3000/v1/actions/github.create_issue")
 
 
 def test_missing_runtime_is_reported():
