@@ -12,9 +12,9 @@ class SkillLearningSkill(BaseSkill):
 
     name = "skill_learning"
     description = (
-        "Continuously learn reusable knowledge from verified debugging, workarounds, "
-        "project patterns, and tool discoveries. Use after non-obvious tasks or when "
-        "the user asks what was learned, save this as a skill, or extract a skill."
+        "Learn reusable knowledge from verified debugging, workarounds, project patterns, "
+        "and tool discoveries. Learned content must be grounded in concrete evidence, not "
+        "model-only speculation."
     )
     schema = {
         "type": "function",
@@ -28,11 +28,12 @@ class SkillLearningSkill(BaseSkill):
                     "name": {"type": "string", "description": "Skill slug for save/get (kebab-case)."},
                     "query": {"type": "string", "description": "Search terms for existing learned skills."},
                     "title": {"type": "string"},
-                    "description_text": {"type": "string", "description": "Precise reusable trigger-oriented description."},
+                    "description_text": {"type": "string"},
                     "problem": {"type": "string"},
                     "triggers": {"type": "array", "items": {"type": "string"}},
                     "solution": {"type": "string"},
                     "verification": {"type": "string"},
+                    "evidence": {"type": "string", "description": "Concrete execution evidence supporting this lesson."},
                     "notes": {"type": "string"},
                     "source": {"type": "string"},
                 },
@@ -76,7 +77,22 @@ class SkillLearningSkill(BaseSkill):
         haystack = text.lower()
         return sum(1 for term in terms if term in haystack)
 
-    def _render(self, slug: str, title: str, description: str, problem: str, triggers: Iterable[str], solution: str, verification: str, notes: str, source: str, version: str, date: str) -> str:
+    @staticmethod
+    def _quality_check(problem: str, solution: str, verification: str, evidence: str) -> str | None:
+        if not evidence.strip():
+            return "SKILL_REJECTED: No concrete evidence was supplied. Do not learn from model-only speculation."
+        combined = f"{evidence}\n{verification}".lower()
+        markers = (
+            "exit_code: 0", "success", "successfully", "listening on",
+            "created and verified", "passed", "verified", "working", "completed",
+        )
+        if not any(marker in combined for marker in markers):
+            return "SKILL_REJECTED: Evidence lacks a recognizable successful/verified execution marker."
+        if "unicodedecodeerror" in problem.lower() and "cp1252" in problem.lower() and "cp1252" in solution.lower() and "utf-8" not in solution.lower():
+            return "SKILL_REJECTED: Proposed encoding fix contradicts the verified UTF-8 solution."
+        return None
+
+    def _render(self, slug, title, description, problem, triggers, solution, verification, evidence, notes, source, version, date):
         trigger_lines = "\n".join(f"- {self._clean(t, 1000)}" for t in triggers if str(t).strip())
         references = f"\n\n## References\n{self._clean(source, 4000)}" if str(source).strip() else ""
         return (
@@ -97,28 +113,38 @@ class SkillLearningSkill(BaseSkill):
             f"{self._clean(solution)}\n\n"
             "## Verification\n\n"
             f"{self._clean(verification)}\n\n"
+            "## Evidence\n\n"
+            f"{self._clean(evidence)}\n\n"
             "## Notes\n\n"
-            f"{self._clean(notes) or 'Use only when the trigger conditions match. Do not treat this skill as authoritative without verification.'}"
+            f"{self._clean(notes) or 'Use only when the trigger conditions match. Re-verify before applying to a different environment.'}"
             f"{references}\n"
         )
 
     def _save(self, arguments: dict) -> str:
-        required = ["name", "title", "description_text", "problem", "solution", "verification"]
+        required = ["name", "title", "description_text", "problem", "solution", "verification", "evidence"]
         missing = [key for key in required if not str(arguments.get(key, "")).strip()]
         if missing:
             return "SKILL_LEARNING_ERROR: Missing required fields: " + ", ".join(missing)
+
+        rejection = self._quality_check(
+            str(arguments["problem"]), str(arguments["solution"]),
+            str(arguments["verification"]), str(arguments["evidence"]),
+        )
+        if rejection:
+            return rejection
 
         slug = self._slug(arguments["name"])
         if not slug:
             return "SKILL_LEARNING_ERROR: Invalid skill name."
 
-        description = self._clean(arguments["description_text"], 1500)
-        content = "\n".join([description, self._clean(arguments["problem"]), self._clean(arguments["solution"])])
-        if len(content.strip()) < 80:
+        content = "\n".join([
+            self._clean(arguments["description_text"]), self._clean(arguments["problem"]),
+            self._clean(arguments["solution"]), self._clean(arguments["verification"]),
+            self._clean(arguments["evidence"]),
+        ])
+        if len(content.strip()) < 120:
             return "SKILL_REJECTED: Knowledge is too thin to be reusable."
 
-        # Redaction is a hard safety boundary, not a reason to discard an otherwise reusable lesson.
-        # The saved artifact contains the safe placeholder instead of the raw secret.
         target = self.root / slug / "SKILL.md"
         existing = self._read(target) if target.exists() else ""
         if existing:
@@ -132,17 +158,10 @@ class SkillLearningSkill(BaseSkill):
             version = "1.0.0"
 
         rendered = self._render(
-            slug=slug,
-            title=arguments["title"],
-            description=description,
-            problem=arguments["problem"],
-            triggers=arguments.get("triggers", []),
-            solution=arguments["solution"],
-            verification=arguments["verification"],
-            notes=arguments.get("notes", ""),
-            source=arguments.get("source", ""),
-            version=version,
-            date=datetime.now(timezone.utc).date().isoformat(),
+            slug, arguments["title"], arguments["description_text"], arguments["problem"],
+            arguments.get("triggers", []), arguments["solution"], arguments["verification"],
+            arguments["evidence"], arguments.get("notes", ""), arguments.get("source", ""),
+            version, datetime.now(timezone.utc).date().isoformat(),
         )
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(rendered, encoding="utf-8")
