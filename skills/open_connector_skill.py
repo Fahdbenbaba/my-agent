@@ -113,9 +113,7 @@ class OpenConnectorSkill(BaseSkill):
         if action == "health":
             payload, error = self._request("GET", "/v1/health", headers=self._headers())
         elif action == "providers":
-            payload, error = self._request("GET", "/api/catalog", headers=self._headers())
-            if error:
-                payload, error = self._request("GET", "/v1/providers", headers=self._headers())
+            payload, error = self._request("GET", "/v1/catalog", headers=self._headers())
         elif action == "provider":
             service = str(arguments.get("service", "")).strip()
             if not service:
