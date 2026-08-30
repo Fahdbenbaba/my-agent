@@ -2,6 +2,7 @@ from unittest.mock import MagicMock
 
 import requests
 
+from agent.router import Router
 from skills.open_connector_skill import OpenConnectorSkill
 
 
@@ -90,6 +91,21 @@ def test_execute_allows_confirmed_action():
     })
     assert '"sent": true' in result.lower()
     assert session.request.call_args.args[:2] == ("POST", "http://localhost:3000/v1/actions/github.create_issue")
+
+
+def test_router_to_openconnector_execute_path():
+    route = Router().route("Execute OpenConnector action github.get_repository")
+    assert route["tool"] == "open_connector"
+    assert route["arguments"]["action"] == "execute"
+
+    session = MagicMock()
+    session.request.return_value = make_response(payload={"success": True, "data": {"id": "demo"}})
+    skill = OpenConnectorSkill(session=session)
+    result = skill.execute(route["arguments"])
+
+    assert '"success": true' in result.lower()
+    assert '"id": "demo"' in result
+    assert session.request.call_args.args[:2] == ("POST", "http://localhost:3000/v1/actions/github.get_repository")
 
 
 def test_missing_runtime_is_reported():
