@@ -9,7 +9,7 @@ class OpenConnectorSkill(BaseSkill):
     """HTTP bridge to a local or explicitly configured OpenConnector runtime."""
 
     name = "open_connector"
-    description = "Discover providers, inspect connections and OAuth configuration, start OAuth authorization, and execute OpenConnector Actions. Provider credentials stay inside the connector runtime."
+    description = "Discover providers, inspect connections and OAuth configuration, run a non-destructive runtime smoke test, and execute OpenConnector Actions. Provider credentials stay inside the connector runtime."
     schema = {
         "type": "function",
         "function": {
@@ -21,16 +21,9 @@ class OpenConnectorSkill(BaseSkill):
                     "action": {
                         "type": "string",
                         "enum": [
-                            "health",
-                            "providers",
-                            "provider",
-                            "connections",
-                            "oauth_configs",
-                            "oauth_authorize",
-                            "list_actions",
-                            "search_actions",
-                            "get_action",
-                            "execute",
+                            "health", "self_test", "providers", "provider", "connections",
+                            "oauth_configs", "oauth_authorize", "list_actions", "search_actions",
+                            "get_action", "execute",
                         ],
                     },
                     "service": {"type": "string"},
@@ -98,18 +91,52 @@ class OpenConnectorSkill(BaseSkill):
             payload["requestedScopes"] = [str(scope).strip() for scope in requested_scopes if str(scope).strip()]
         return payload
 
+    def _self_test(self):
+        """Non-destructive runtime smoke test: health + catalog + connections."""
+        checks = []
+        for label, method, path in (
+            ("health", "GET", "/v1/health"),
+            ("catalog", "GET", "/v1/catalog"),
+            ("connections", "GET", "/api/connections"),
+        ):
+            payload, error = self._request(method, path, headers=self._headers())
+            if payload is None or error:
+                checks.append({"check": label, "ok": False, "error": error or "no response"})
+            else:
+                checks.append({"check": label, "ok": True, "summary": self._summarize_payload(payload, label)})
+        ok = all(item["ok"] for item in checks)
+        return json.dumps({"status": "ok" if ok else "failed", "runtime": self.base_url, "checks": checks}, ensure_ascii=False, indent=2)
+
+    @staticmethod
+    def _summarize_payload(payload, label):
+        if not isinstance(payload, dict):
+            return "response received"
+        if label == "catalog":
+            for key in ("providers", "apps", "data"):
+                value = payload.get(key)
+                if isinstance(value, list):
+                    return f"{len(value)} entries"
+        if label == "connections":
+            for key in ("connections", "data"):
+                value = payload.get(key)
+                if isinstance(value, list):
+                    return f"{len(value)} connections"
+        return "response received"
+
     def execute(self, arguments: dict) -> str:
         if not isinstance(arguments, dict):
             return "OpenConnector Error: arguments must be a dictionary."
 
         action = str(arguments.get("action", "health")).strip().lower()
         allowed = {
-            "health", "providers", "provider", "connections", "oauth_configs",
+            "health", "self_test", "providers", "provider", "connections", "oauth_configs",
             "oauth_authorize", "list_actions", "search_actions", "get_action", "execute",
         }
         if action not in allowed:
             return f"OpenConnector Error: Unsupported action '{action}'."
 
+        if action == "self_test":
+            return self._self_test()
         if action == "health":
             payload, error = self._request("GET", "/v1/health", headers=self._headers())
         elif action == "providers":
@@ -129,10 +156,8 @@ class OpenConnectorSkill(BaseSkill):
                 return "OpenConnector Error: No OAuth service provided."
             body = self._clean_oauth_args(arguments)
             payload, error = self._request(
-                "POST",
-                "/api/oauth/authorizations",
-                headers=self._headers({"Content-Type": "application/json"}),
-                json=body,
+                "POST", "/api/oauth/authorizations",
+                headers=self._headers({"Content-Type": "application/json"}), json=body,
             )
         elif action == "list_actions":
             params = {}
