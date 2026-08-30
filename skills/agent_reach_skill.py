@@ -38,18 +38,9 @@ class AgentReachSkill(BaseSkill):
                         ],
                         "description": "status/doctor/capabilities inspect Agent Reach; read reads a URL; search searches the web; github searches or reads public GitHub content; youtube searches or inspects YouTube; rss reads a feed.",
                     },
-                    "url": {
-                        "type": "string",
-                        "description": "Public URL for read, youtube, or rss actions.",
-                    },
-                    "query": {
-                        "type": "string",
-                        "description": "Search query for search, github, or youtube actions.",
-                    },
-                    "max_results": {
-                        "type": "integer",
-                        "description": "Maximum number of results for search actions (1-10).",
-                    },
+                    "url": {"type": "string", "description": "Public URL for read, youtube, or rss actions."},
+                    "query": {"type": "string", "description": "Search query for search, github, or youtube actions."},
+                    "max_results": {"type": "integer", "description": "Maximum number of results for search actions (1-10)."},
                 },
                 "required": ["action"],
             },
@@ -71,18 +62,18 @@ class AgentReachSkill(BaseSkill):
 
     @staticmethod
     def _run_command(command, timeout=120):
+        """Run a command in binary mode and decode explicitly to avoid Windows cp1252 failures."""
         try:
             completed = subprocess.run(
                 command,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=False,
                 timeout=timeout,
                 shell=False,
             )
-            stdout = (completed.stdout or "").strip()
-            stderr = (completed.stderr or "").strip()
+            stdout = (completed.stdout or b"").decode("utf-8", errors="replace").strip()
+            stderr = (completed.stderr or b"").decode("utf-8", errors="replace").strip()
             return completed.returncode, stdout or stderr
         except subprocess.TimeoutExpired:
             return 124, "Command timed out."
@@ -91,10 +82,7 @@ class AgentReachSkill(BaseSkill):
 
     @staticmethod
     def _http_get(url, timeout=30, headers=None):
-        request = urllib.request.Request(
-            url,
-            headers=headers or {"User-Agent": "my-agent/1.0"},
-        )
+        request = urllib.request.Request(url, headers=headers or {"User-Agent": "my-agent/1.0"})
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return response.read().decode("utf-8", errors="replace")
 
@@ -104,11 +92,7 @@ class AgentReachSkill(BaseSkill):
             return "Agent Reach Error: read requires an http(s) URL."
         jina_url = "https://r.jina.ai/" + url
         try:
-            text = self._http_get(
-                jina_url,
-                timeout=45,
-                headers={"User-Agent": "Mozilla/5.0 my-agent/1.0"},
-            )
+            text = self._http_get(jina_url, timeout=45, headers={"User-Agent": "Mozilla/5.0 my-agent/1.0"})
             return f"AGENT_REACH_WEB_SUCCESS\nURL: {url}\nCONTENT:\n{text[:20000]}"
         except Exception as exc:
             return f"AGENT_REACH_WEB_ERROR\nURL: {url}\nERROR: {exc}"
@@ -116,10 +100,7 @@ class AgentReachSkill(BaseSkill):
     def _search_web(self, query, max_results):
         try:
             from skills.web_search_skill import WebSearchSkill
-
-            result = WebSearchSkill().execute(
-                {"query": query, "max_results": max_results, "verify": False}
-            )
+            result = WebSearchSkill().execute({"query": query, "max_results": max_results, "verify": False})
             return f"AGENT_REACH_SEARCH\n{result}"
         except Exception as exc:
             return f"AGENT_REACH_SEARCH_ERROR\nQUERY: {query}\nERROR: {exc}"
@@ -128,24 +109,13 @@ class AgentReachSkill(BaseSkill):
         target_url = str(url or "").strip()
         if target_url and "github.com" in target_url.lower():
             return self._read_web(target_url)
-
         query = str(query or "").strip()
         if not query:
             return "Agent Reach Error: github requires a query or GitHub URL."
-
         encoded = urllib.parse.quote(query)
         api_url = f"https://api.github.com/search/repositories?q={encoded}&per_page={max_results}"
         try:
-            payload = json.loads(
-                self._http_get(
-                    api_url,
-                    timeout=30,
-                    headers={
-                        "Accept": "application/vnd.github+json",
-                        "User-Agent": "my-agent/1.0",
-                    },
-                )
-            )
+            payload = json.loads(self._http_get(api_url, timeout=30, headers={"Accept": "application/vnd.github+json", "User-Agent": "my-agent/1.0"}))
             items = payload.get("items", [])
             if not items:
                 return f"AGENT_REACH_GITHUB\nQUERY: {query}\nNo public repositories found."
@@ -162,28 +132,22 @@ class AgentReachSkill(BaseSkill):
             return f"AGENT_REACH_GITHUB_ERROR\nQUERY: {query}\nERROR: {exc}"
 
     def _youtube(self, query, url=None, max_results=5):
-        if not shutil.which("yt-dlp") and not shutil.which("yt-dlp.exe"):
-            return "AGENT_REACH_YOUTUBE_ERROR\nyt-dlp is not available on PATH."
-
         executable = shutil.which("yt-dlp") or shutil.which("yt-dlp.exe")
+        if not executable:
+            return "AGENT_REACH_YOUTUBE_ERROR\nyt-dlp is not available on PATH."
         target = str(url or "").strip()
         if not target:
             query = str(query or "").strip()
             if not query:
                 return "Agent Reach Error: youtube requires a query or URL."
             target = f"ytsearch{max_results}:{query}"
-
-        code, output = self._run_command(
-            [executable, "--dump-single-json", "--flat-playlist", "--skip-download", target],
-            timeout=120,
-        )
+        code, output = self._run_command([executable, "--dump-single-json", "--flat-playlist", "--skip-download", target], timeout=120)
         if code != 0:
             return f"AGENT_REACH_YOUTUBE_ERROR\n{output[:12000]}"
         try:
             data = json.loads(output)
         except json.JSONDecodeError:
             return f"AGENT_REACH_YOUTUBE\n{output[:12000]}"
-
         entries = data.get("entries") or [data]
         lines = ["AGENT_REACH_YOUTUBE"]
         for index, item in enumerate(entries[:max_results], 1):
@@ -201,7 +165,6 @@ class AgentReachSkill(BaseSkill):
             return "Agent Reach Error: rss requires a feed URL."
         try:
             import feedparser
-
             feed = feedparser.parse(url)
             if getattr(feed, "bozo", 0) and not getattr(feed, "entries", None):
                 return f"AGENT_REACH_RSS_ERROR\nURL: {url}\nERROR: {getattr(feed, 'bozo_exception', 'Invalid feed')}"
@@ -219,19 +182,12 @@ class AgentReachSkill(BaseSkill):
     def execute(self, arguments: dict) -> str:
         if not isinstance(arguments, dict):
             return "Agent Reach Error: arguments must be a dictionary."
-
         action = str(arguments.get("action", "status")).strip().lower()
         allowed = {"status", "doctor", "capabilities", "read", "search", "github", "youtube", "rss"}
         if action not in allowed:
             return f"Agent Reach Error: Unsupported action '{action}'."
-
         if action == "capabilities":
-            return json.dumps(
-                {"installed": bool(self._cli()), "capabilities": self.CAPABILITIES},
-                ensure_ascii=False,
-                indent=2,
-            )
-
+            return json.dumps({"installed": bool(self._cli()), "capabilities": self.CAPABILITIES}, ensure_ascii=False, indent=2)
         cli = self._cli()
         if action in {"status", "doctor"}:
             if not cli:
@@ -240,16 +196,13 @@ class AgentReachSkill(BaseSkill):
                 return f"AGENT_REACH_AVAILABLE\nCLI: {cli}"
             code, output = self._run_command([cli, "doctor", "--json"], timeout=120)
             return f"AGENT_REACH_DOCTOR\nEXIT_CODE: {code}\n{output[:20000]}"
-
         max_results = 5
         try:
             max_results = max(1, min(int(arguments.get("max_results", 5)), 10))
         except (TypeError, ValueError):
-            max_results = 5
-
+            pass
         url = str(arguments.get("url", "")).strip()
         query = str(arguments.get("query", "")).strip()
-
         if action == "read":
             return self._read_web(url)
         if action == "search":
