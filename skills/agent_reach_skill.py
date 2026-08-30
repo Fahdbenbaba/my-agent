@@ -102,9 +102,13 @@ class AgentReachSkill(BaseSkill):
         url = str(url).strip()
         if not re.match(r"^https?://", url, re.I):
             return "Agent Reach Error: read requires an http(s) URL."
-        jina_url = "https://r.jina.ai/http://" + url.split("://", 1)[1] if url.lower().startswith("https://") else "https://r.jina.ai/" + url
+        jina_url = "https://r.jina.ai/" + url
         try:
-            text = self._http_get(jina_url, timeout=45, headers={"User-Agent": "Mozilla/5.0 my-agent/1.0"})
+            text = self._http_get(
+                jina_url,
+                timeout=45,
+                headers={"User-Agent": "Mozilla/5.0 my-agent/1.0"},
+            )
             return f"AGENT_REACH_WEB_SUCCESS\nURL: {url}\nCONTENT:\n{text[:20000]}"
         except Exception as exc:
             return f"AGENT_REACH_WEB_ERROR\nURL: {url}\nERROR: {exc}"
@@ -132,11 +136,20 @@ class AgentReachSkill(BaseSkill):
         encoded = urllib.parse.quote(query)
         api_url = f"https://api.github.com/search/repositories?q={encoded}&per_page={max_results}"
         try:
-            payload = json.loads(self._http_get(api_url, timeout=30, headers={"Accept": "application/vnd.github+json", "User-Agent": "my-agent/1.0"}))
+            payload = json.loads(
+                self._http_get(
+                    api_url,
+                    timeout=30,
+                    headers={
+                        "Accept": "application/vnd.github+json",
+                        "User-Agent": "my-agent/1.0",
+                    },
+                )
+            )
             items = payload.get("items", [])
             if not items:
                 return f"AGENT_REACH_GITHUB\nQUERY: {query}\nNo public repositories found."
-            lines = [f"AGENT_REACH_GITHUB", f"QUERY: {query}"]
+            lines = ["AGENT_REACH_GITHUB", f"QUERY: {query}"]
             for index, item in enumerate(items[:max_results], 1):
                 lines.append(
                     f"REPO {index} | {item.get('full_name', '')}\n"
