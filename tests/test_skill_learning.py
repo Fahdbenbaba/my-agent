@@ -41,9 +41,43 @@ def test_secret_content_is_redacted(tmp_path: Path):
     assert "[REDACTED_SECRET]" in saved
 
 
+def test_auto_capture_uses_verified_evidence(tmp_path: Path):
+    skill = SkillLearningSkill(root=tmp_path)
+    result = skill.execute({
+        "action": "auto_capture",
+        "name": "verified-runtime-recovery",
+        "title": "Verified runtime recovery",
+        "description_text": "Reusable recovery after a verified runtime failure.",
+        "problem": "The first runtime launch failed with a process error.",
+        "triggers": ["runtime failure", "process error"],
+        "solution": "Use the verified direct API entrypoint instead of the failing wrapper.",
+        "verification": "The direct API runtime started successfully and is listening on 127.0.0.1:3000.",
+        "evidence": "First attempt failed with process error. Recovery completed successfully with exit_code: 0.",
+        "source": "verified execution journal",
+    })
+    assert result.startswith("SKILL_SAVED:")
+    saved = skill.execute({"action": "get", "name": "verified-runtime-recovery"})
+    assert "Recovery completed successfully" in saved
+
+
+def test_auto_capture_still_rejects_unverified_evidence(tmp_path: Path):
+    skill = SkillLearningSkill(root=tmp_path)
+    result = skill.execute({
+        "action": "auto_capture",
+        "name": "speculative-fix",
+        "title": "Speculative fix",
+        "description_text": "A possible workaround.",
+        "problem": "Something might be broken.",
+        "solution": "Try changing configuration.",
+        "verification": "It should work.",
+        "evidence": "No execution was performed.",
+    })
+    assert result.startswith("SKILL_REJECTED:")
+
+
 def test_router_learning_commands():
     from agent.router import Router
 
-    assert Router().route("Save this as a skill") ["tool"] == "skill_learning"
-    assert Router().route("List learned skills") ["arguments"]["action"] == "list"
+    assert Router().route("Save this as a skill")["tool"] == "skill_learning"
+    assert Router().route("List learned skills")["arguments"]["action"] == "list"
     assert Router().route("Search learned skills for spawn EINVAL Windows")["arguments"]["action"] == "search"
