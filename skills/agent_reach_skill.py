@@ -1,14 +1,21 @@
 import json
+import re
 import shutil
 import subprocess
+import urllib.parse
+import urllib.request
+
 from skills.base_skill import BaseSkill
 
 
 class AgentReachSkill(BaseSkill):
-    """Bridge to the locally installed Agent Reach CLI."""
+    """Bridge the agent to Agent Reach diagnostics and its available backends."""
 
     name = "agent_reach"
-    description = "Check and use locally installed Agent Reach internet capabilities. Run diagnostics first; installation is explicit and never automatic."
+    description = (
+        "Use the locally installed Agent Reach stack for web pages, GitHub, YouTube, "
+        "RSS, search, diagnostics, and capability discovery."
+    )
     schema = {
         "type": "function",
         "function": {
@@ -19,9 +26,30 @@ class AgentReachSkill(BaseSkill):
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["status", "doctor", "capabilities"],
-                        "description": "status checks the CLI, doctor runs Agent Reach diagnostics, capabilities returns the supported capability map.",
-                    }
+                        "enum": [
+                            "status",
+                            "doctor",
+                            "capabilities",
+                            "read",
+                            "search",
+                            "github",
+                            "youtube",
+                            "rss",
+                        ],
+                        "description": "status/doctor/capabilities inspect Agent Reach; read reads a URL; search searches the web; github searches or reads public GitHub content; youtube searches or inspects YouTube; rss reads a feed.",
+                    },
+                    "url": {
+                        "type": "string",
+                        "description": "Public URL for read, youtube, or rss actions.",
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Search query for search, github, or youtube actions.",
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum number of results for search actions (1-10).",
+                    },
                 },
                 "required": ["action"],
             },
@@ -29,54 +57,192 @@ class AgentReachSkill(BaseSkill):
     }
 
     CAPABILITIES = {
-        "web": "Read public web pages through Agent Reach's configured web backend.",
-        "youtube": "Search videos and extract available metadata/transcripts.",
-        "rss": "Read RSS and Atom feeds.",
-        "github": "Read public repositories; additional actions require explicit GitHub authorization.",
-        "search": "Use the configured semantic web-search backend.",
-        "social": "Optional channels such as X, Reddit, LinkedIn, Facebook, and Instagram may require explicit local login/configuration.",
+        "web": "Read public web pages through Jina Reader (the configured Agent Reach web backend).",
+        "youtube": "Search YouTube with yt-dlp and inspect public video metadata.",
+        "rss": "Read RSS and Atom feeds with feedparser.",
+        "github": "Search public GitHub repositories and read public repository pages/files without requiring gh CLI.",
+        "search": "Use the agent's configured web-search providers; falls back to the existing web_search skill when Agent Reach semantic search is unavailable.",
+        "social": "Optional social channels depend on the local Agent Reach configuration and login state.",
     }
 
     @staticmethod
     def _cli():
         return shutil.which("agent-reach") or shutil.which("agent-reach.exe")
 
+    @staticmethod
+    def _run_command(command, timeout=120):
+        try:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                shell=False,
+            )
+            stdout = (completed.stdout or "").strip()
+            stderr = (completed.stderr or "").strip()
+            return completed.returncode, stdout or stderr
+        except subprocess.TimeoutExpired:
+            return 124, "Command timed out."
+        except OSError as exc:
+            return 1, f"OS error: {exc}"
+
+    @staticmethod
+    def _http_get(url, timeout=30, headers=None):
+        request = urllib.request.Request(
+            url,
+            headers=headers or {"User-Agent": "my-agent/1.0"},
+        )
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.read().decode("utf-8", errors="replace")
+
+    def _read_web(self, url):
+        url = str(url).strip()
+        if not re.match(r"^https?://", url, re.I):
+            return "Agent Reach Error: read requires an http(s) URL."
+        jina_url = "https://r.jina.ai/http://" + url.split("://", 1)[1] if url.lower().startswith("https://") else "https://r.jina.ai/" + url
+        try:
+            text = self._http_get(jina_url, timeout=45, headers={"User-Agent": "Mozilla/5.0 my-agent/1.0"})
+            return f"AGENT_REACH_WEB_SUCCESS\nURL: {url}\nCONTENT:\n{text[:20000]}"
+        except Exception as exc:
+            return f"AGENT_REACH_WEB_ERROR\nURL: {url}\nERROR: {exc}"
+
+    def _search_web(self, query, max_results):
+        try:
+            from skills.web_search_skill import WebSearchSkill
+
+            result = WebSearchSkill().execute(
+                {"query": query, "max_results": max_results, "verify": False}
+            )
+            return f"AGENT_REACH_SEARCH\n{result}"
+        except Exception as exc:
+            return f"AGENT_REACH_SEARCH_ERROR\nQUERY: {query}\nERROR: {exc}"
+
+    def _github(self, query, url=None, max_results=5):
+        target_url = str(url or "").strip()
+        if target_url and "github.com" in target_url.lower():
+            return self._read_web(target_url)
+
+        query = str(query or "").strip()
+        if not query:
+            return "Agent Reach Error: github requires a query or GitHub URL."
+
+        encoded = urllib.parse.quote(query)
+        api_url = f"https://api.github.com/search/repositories?q={encoded}&per_page={max_results}"
+        try:
+            payload = json.loads(self._http_get(api_url, timeout=30, headers={"Accept": "application/vnd.github+json", "User-Agent": "my-agent/1.0"}))
+            items = payload.get("items", [])
+            if not items:
+                return f"AGENT_REACH_GITHUB\nQUERY: {query}\nNo public repositories found."
+            lines = [f"AGENT_REACH_GITHUB", f"QUERY: {query}"]
+            for index, item in enumerate(items[:max_results], 1):
+                lines.append(
+                    f"REPO {index} | {item.get('full_name', '')}\n"
+                    f"URL: {item.get('html_url', '')}\n"
+                    f"DESCRIPTION: {item.get('description') or 'No description'}\n"
+                    f"STARS: {item.get('stargazers_count', 0)} | LANGUAGE: {item.get('language') or 'unknown'}"
+                )
+            return "\n\n".join(lines)
+        except Exception as exc:
+            return f"AGENT_REACH_GITHUB_ERROR\nQUERY: {query}\nERROR: {exc}"
+
+    def _youtube(self, query, url=None, max_results=5):
+        if not shutil.which("yt-dlp") and not shutil.which("yt-dlp.exe"):
+            return "AGENT_REACH_YOUTUBE_ERROR\nyt-dlp is not available on PATH."
+
+        executable = shutil.which("yt-dlp") or shutil.which("yt-dlp.exe")
+        target = str(url or "").strip()
+        if not target:
+            query = str(query or "").strip()
+            if not query:
+                return "Agent Reach Error: youtube requires a query or URL."
+            target = f"ytsearch{max_results}:{query}"
+
+        code, output = self._run_command(
+            [executable, "--dump-single-json", "--flat-playlist", "--skip-download", target],
+            timeout=120,
+        )
+        if code != 0:
+            return f"AGENT_REACH_YOUTUBE_ERROR\n{output[:12000]}"
+        try:
+            data = json.loads(output)
+        except json.JSONDecodeError:
+            return f"AGENT_REACH_YOUTUBE\n{output[:12000]}"
+
+        entries = data.get("entries") or [data]
+        lines = ["AGENT_REACH_YOUTUBE"]
+        for index, item in enumerate(entries[:max_results], 1):
+            lines.append(
+                f"VIDEO {index} | {item.get('title', 'Unknown title')}\n"
+                f"URL: {item.get('webpage_url') or item.get('url', '')}\n"
+                f"CHANNEL: {item.get('channel') or item.get('uploader') or 'Unknown'}\n"
+                f"DURATION: {item.get('duration') or 'unknown'}"
+            )
+        return "\n\n".join(lines)
+
+    def _rss(self, url):
+        url = str(url or "").strip()
+        if not url:
+            return "Agent Reach Error: rss requires a feed URL."
+        try:
+            import feedparser
+
+            feed = feedparser.parse(url)
+            if getattr(feed, "bozo", 0) and not getattr(feed, "entries", None):
+                return f"AGENT_REACH_RSS_ERROR\nURL: {url}\nERROR: {getattr(feed, 'bozo_exception', 'Invalid feed')}"
+            lines = ["AGENT_REACH_RSS", f"URL: {url}", f"TITLE: {feed.feed.get('title', 'Unknown feed')}"]
+            for index, entry in enumerate(feed.entries[:10], 1):
+                lines.append(
+                    f"ITEM {index} | {entry.get('title', 'Untitled')}\n"
+                    f"URL: {entry.get('link', '')}\n"
+                    f"SUMMARY: {re.sub(r'<[^>]+>', ' ', entry.get('summary', ''))[:1000]}"
+                )
+            return "\n\n".join(lines)
+        except Exception as exc:
+            return f"AGENT_REACH_RSS_ERROR\nURL: {url}\nERROR: {exc}"
+
     def execute(self, arguments: dict) -> str:
         if not isinstance(arguments, dict):
             return "Agent Reach Error: arguments must be a dictionary."
 
         action = str(arguments.get("action", "status")).strip().lower()
-        if action not in {"status", "doctor", "capabilities"}:
+        allowed = {"status", "doctor", "capabilities", "read", "search", "github", "youtube", "rss"}
+        if action not in allowed:
             return f"Agent Reach Error: Unsupported action '{action}'."
 
         if action == "capabilities":
-            return json.dumps({"installed": bool(self._cli()), "capabilities": self.CAPABILITIES}, ensure_ascii=False, indent=2)
+            return json.dumps(
+                {"installed": bool(self._cli()), "capabilities": self.CAPABILITIES},
+                ensure_ascii=False,
+                indent=2,
+            )
 
         cli = self._cli()
-        if not cli:
-            return (
-                "AGENT_REACH_NOT_INSTALLED\n"
-                "Agent Reach CLI was not found on PATH. Install it explicitly first, then run this action again. "
-                "The agent will not modify your system or install software automatically."
-            )
+        if action in {"status", "doctor"}:
+            if not cli:
+                return "AGENT_REACH_NOT_INSTALLED\nAgent Reach CLI was not found on PATH."
+            if action == "status":
+                return f"AGENT_REACH_AVAILABLE\nCLI: {cli}"
+            code, output = self._run_command([cli, "doctor", "--json"], timeout=120)
+            return f"AGENT_REACH_DOCTOR\nEXIT_CODE: {code}\n{output[:20000]}"
 
-        if action == "status":
-            return f"AGENT_REACH_AVAILABLE\nCLI: {cli}\nRun the 'doctor' action for full diagnostics."
-
+        max_results = 5
         try:
-            completed = subprocess.run(
-                [cli, "doctor"],
-                capture_output=True,
-                text=True,
-                timeout=120,
-                shell=False,
-            )
-            output = (completed.stdout or completed.stderr or "").strip()
-            return (
-                f"AGENT_REACH_DOCTOR\nEXIT_CODE: {completed.returncode}\n"
-                f"{output[:12000]}"
-            )
-        except subprocess.TimeoutExpired:
-            return "Agent Reach Error: doctor timed out after 120 seconds."
-        except OSError as exc:
-            return f"Agent Reach Error: {exc}"
+            max_results = max(1, min(int(arguments.get("max_results", 5)), 10))
+        except (TypeError, ValueError):
+            max_results = 5
+
+        url = str(arguments.get("url", "")).strip()
+        query = str(arguments.get("query", "")).strip()
+
+        if action == "read":
+            return self._read_web(url)
+        if action == "search":
+            return self._search_web(query, max_results)
+        if action == "github":
+            return self._github(query, url, max_results)
+        if action == "youtube":
+            return self._youtube(query, url, max_results)
+        return self._rss(url)
