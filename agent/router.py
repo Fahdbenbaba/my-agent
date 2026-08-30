@@ -23,14 +23,31 @@ class Router:
                     code = match.group(1).strip()
             return {"use_tool": True, "tool": "python_sandbox", "arguments": {"code": code}}
 
-        # 2. Browser/navigation
+        # 2. Agent Reach capability layer.
+        if any(w in query_lower for w in ["agent reach", "agent-reach", "reach doctor", "reach status", "internet capabilities", "internet reach"]):
+            action = "doctor" if "doctor" in query_lower else ("capabilities" if "capabilit" in query_lower else "status")
+            return {"use_tool": True, "tool": "agent_reach", "arguments": {"action": action}}
+
+        # 3. OpenConnector runtime.
+        if any(w in query_lower for w in ["openconnector", "open connector", "connector health", "connector providers", "connector actions"]):
+            if "health" in query_lower:
+                action = "health"
+            elif "provider" in query_lower:
+                action = "providers"
+            elif "search" in query_lower:
+                action = "search_actions"
+            else:
+                action = "list_actions"
+            return {"use_tool": True, "tool": "open_connector", "arguments": {"action": action, "query": text}}
+
+        # 4. Browser/navigation
         url_match = re.search(r"https?://\S+", text, re.I)
         browser_patterns = ["open url", "open website", "open site", "open http", "open https", "browse to", "visit", "go to", "browser", "موقع", "متصفح"]
         if url_match or any(w in query_lower for w in browser_patterns):
             url = url_match.group(0).rstrip(".,)") if url_match else text
             return {"use_tool": True, "tool": "browser", "arguments": {"url": url}}
 
-        # 3. Database: use explicit DB/SQL intent before generic file/list words.
+        # 5. Database: use explicit DB/SQL intent before generic file/list words.
         database_patterns = ["create sqlite database", "create a sqlite database", "create database", "create a database", "database", "sqlite", "sql query", "run sql", "execute sql", "db", "قاعدة بيانات"]
         if any(w in query_lower for w in database_patterns):
             sql = text
@@ -41,7 +58,7 @@ class Router:
                 return {"use_tool": True, "tool": "database", "arguments": {"query": sql, "db_path": db_name}}
             return {"use_tool": True, "tool": "database", "arguments": {"query": sql}}
 
-        # 4. Git: explicit Git intent before generic file/list words.
+        # 6. Git
         git_patterns = ["git status", "git diff", "git log", "git branch", "git commit", "git add", "git restore", "git checkout", "git repo", "git repository", "repository status", "repo status", "github", "git"]
         if any(w in query_lower for w in git_patterns):
             if "status" in query_lower:
@@ -56,12 +73,11 @@ class Router:
                 command = "status"
             return {"use_tool": True, "tool": "git_manager", "arguments": {"command": command}}
 
-        # 5. Calculator
+        # 7. Calculator
         if any(w in query_lower for w in ["calculate", "math", "حساب", "+", "-", "*", "/"]):
             return {"use_tool": True, "tool": "calculator", "arguments": {"expression": text}}
 
-        # 6. Memory. Explicit storage language wins over retrieval words that
-        # may appear inside the memory itself (for example, "my favorite ...").
+        # 8. Memory
         memory_words = ["remember", "recall", "memory", "what do you remember", "what do you know about me", "what did you remember", "retrieve", "remember about me", "what is my", "what's my", "tell me about me", "my favorite", "شنو كتفكر", "شنو كتعرف عليا", "شكون أنا", "حفظ", "ذاكرة"]
         if any(w in query_lower for w in memory_words):
             store_prefixes = ["remember that ", "remember ", "please remember that ", "please remember "]
@@ -76,7 +92,7 @@ class Router:
                         break
             return {"use_tool": True, "tool": "memory", "arguments": {"action": action, "text": memory_text}}
 
-        # 7. File Manager
+        # 9. File Manager
         file_words = ["file", "files", "dir", "directory", "folder", "show", "list", "create file", "make a file", "write to", "read file", "ملف", "ملفات"]
         if any(w in query_lower for w in file_words):
             create_match = re.search(r"(?:create|make|write)\s+(?:a\s+)?file\s+(?:called|named)?\s*['\"]?([^'\"\s]+)['\"]?\s+(?:with|containing)\s+(?:the\s+)?(?:text|content)?\s*[:=]?\s*['\"]?(.*?)['\"]?$", text, re.I)
@@ -89,7 +105,7 @@ class Router:
                 return {"use_tool": True, "tool": "file_manager", "arguments": {"action": "read", "filepath": read_match.group(1).strip()}}
             return {"use_tool": True, "tool": "file_manager", "arguments": {"action": "list", "filepath": "."}}
 
-        # 8. Web Search
+        # 10. Web Search
         if any(w in query_lower for w in ["search", "google", "web", "بحث", "ابحث"]):
             return {"use_tool": True, "tool": "web_search", "arguments": {"query": text}}
 
