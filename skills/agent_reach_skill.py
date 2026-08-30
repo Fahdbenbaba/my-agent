@@ -60,13 +60,15 @@ class AgentReachSkill(BaseSkill):
 
     @classmethod
     def _run_command(cls, command, timeout=120):
-        """Run in binary mode and decode explicitly; also supports mocked text output in tests."""
+        """Run with explicit UTF-8 decoding while remaining friendly to test doubles."""
         try:
             completed = subprocess.run(
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=False,
+                encoding="utf-8",
+                errors="replace",
                 timeout=timeout,
                 shell=False,
             )
