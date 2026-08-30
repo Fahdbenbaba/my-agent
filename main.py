@@ -34,10 +34,16 @@ def main():
 
             if route_decision and route_decision.get("use_tool"):
                 tool_name = route_decision.get("tool")
+                arguments = route_decision.get("arguments", {})
+
                 if tool_name in agent.skills:
                     print(f"🔧 Executing skill: {tool_name}")
+                    response = agent._execute_skill(tool_name, arguments)
+                else:
+                    response = f"Error: Tool '{tool_name}' is not registered."
+            else:
+                response = agent.run(user_query)
 
-            response = agent.run(user_query)
             print(f"\nAgent:\n{response}\n" + "-" * 60)
 
         except KeyboardInterrupt:
