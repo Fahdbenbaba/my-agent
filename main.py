@@ -32,7 +32,15 @@ def main():
             print("\n[Agent analyzing & routing...]")
             route_decision = router.route(user_query)
 
-            if route_decision and route_decision.get("use_tool"):
+            # Learning requests must pass through AgentCore so it can use
+            # persistent verified evidence and the dedicated learning pipeline.
+            if (
+                route_decision
+                and route_decision.get("use_tool")
+                and route_decision.get("tool") == "skill_learning"
+            ):
+                response = agent.run(user_query)
+            elif route_decision and route_decision.get("use_tool"):
                 tool_name = route_decision.get("tool")
                 arguments = route_decision.get("arguments", {})
 
