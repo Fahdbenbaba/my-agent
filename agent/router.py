@@ -38,9 +38,15 @@ class Router:
         clean_url = url_match.group(0).rstrip(".,)") if url_match else ""
 
         read_intent = any(w in query_lower for w in [
-            "read this", "read url", "read the page", "fetch this", "fetch url",
+            "read this", "read url", "read the page", "read this page", "read the url",
+            "fetch this", "fetch url", "fetch the page", "fetch the url",
             "scrape this", "extract from", "get content from", "analyze this page",
+            "read ", "fetch ",
         ])
+        # A URL plus a direct read/fetch verb is unambiguously a web-read request.
+        if clean_url and re.match(r"^(read|fetch|scrape)\b", query_lower):
+            read_intent = True
+
         github_intent = "github" in query_lower or "git hub" in query_lower
         youtube_intent = any(w in query_lower for w in ["youtube", "youtube video", "youtube videos"])
         rss_intent = any(w in query_lower for w in ["rss feed", "atom feed", "rss", "atom"])
@@ -188,7 +194,7 @@ class Router:
                 return {"use_tool": True, "tool": "file_manager", "arguments": {"action": "read", "filepath": read_match.group(1).strip()}}
             return {"use_tool": True, "tool": "file_manager", "arguments": {"action": "list", "filepath": "."}}
 
-        # 11. Generic Web Search
+        # 11. Web Search
         if any(w in query_lower for w in ["search", "google", "web", "بحث", "ابحث"]):
             return {"use_tool": True, "tool": "web_search", "arguments": {"query": text}}
 
