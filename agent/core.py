@@ -161,8 +161,75 @@ class AgentCore:
             "completed", "listening on", "passed", "created successfully",
         ))
 
+    @staticmethod
+    def _parse_execution_entries(evidence: str):
+        blocks = re.split(r"\n\n---\n\n", evidence)
+        entries = []
+        for block in blocks:
+            match = re.search(r"TOOL:\s*(.+?)\nARGUMENTS:\s*(\{.*?\})\nRESULT:\n(.*)", block, re.S)
+            if not match:
+                continue
+            name, args_raw, result = match.groups()
+            try:
+                args = json.loads(args_raw)
+            except json.JSONDecodeError:
+                args = {}
+            entries.append({"name": name.strip(), "arguments": args, "result": result.strip()})
+        return entries
+
+    def _generic_learning_save(self, evidence):
+        skill = self.skills.get("skill_learning")
+        if not skill:
+            return "SKILL_LEARNING_ERROR: skill_learning is not registered."
+        entries = self._parse_execution_entries(evidence)
+        if len(entries) < 2:
+            return None
+
+        failure = None
+        failure_index = -1
+        failure_markers = ("error", "failed", "failure", "exception", "not found", "timed out")
+        success_markers = ("success", "successfully", "verified", "working", "completed", "listening on", "passed", "created successfully")
+        for index, entry in enumerate(entries):
+            result_lower = entry["result"].lower()
+            if any(marker in result_lower for marker in failure_markers):
+                failure = entry
+                failure_index = index
+
+        if failure is None:
+            return None
+
+        successful_after = None
+        for entry in entries[failure_index + 1:]:
+            if any(marker in entry["result"].lower() for marker in success_markers):
+                successful_after = entry
+                break
+        if not successful_after:
+            return None
+
+        raw_name = re.sub(r"[^a-z0-9]+", "-", f"{failure['name']}-{successful_after['name']}".lower()).strip("-")
+        slug = f"verified-{raw_name}"[:70].rstrip("-") or "verified-debugging-workaround"
+        problem = f"The {failure['name']} step failed.\n{failure['result'][:3500]}"
+        solution = (
+            f"The verified recovery path was to use the successful {successful_after['name']} execution. "
+            f"Arguments: {json.dumps(successful_after['arguments'], ensure_ascii=False, default=str)}\n"
+            f"Verified result: {successful_after['result'][:3500]}"
+        )
+        verification = successful_after["result"][:3500]
+        return skill.execute({
+            "action": "save",
+            "name": slug,
+            "title": f"Verified recovery from {failure['name']} failure",
+            "description_text": f"Reusable workaround discovered after a verified failure of {failure['name']}.",
+            "problem": problem,
+            "triggers": [failure["name"], "verified recovery", "debugging workaround"],
+            "solution": solution,
+            "verification": verification,
+            "evidence": evidence,
+            "source": "persistent verified execution journal",
+            "notes": "Automatically extracted from a failure followed by a later successful verified execution. Re-verify in a new environment.",
+        })
+
     def _learning_save_from_journal(self):
-        """Save only deterministic, project-specific fixes that are evidenced by the journal."""
         evidence = self._learning_evidence()
         lower = evidence.lower()
         skill = self.skills.get("skill_learning")
@@ -188,6 +255,10 @@ class AgentCore:
                 "source": "verified execution journal",
             }
             return skill.execute(arguments)
+
+        generic = self._generic_learning_save(evidence)
+        if generic:
+            return generic
 
         return (
             "SKILL_REJECTED: The current verified journal does not contain a reusable debugging/workaround lesson.\n"
