@@ -27,6 +27,7 @@ class AgentCore:
         "For side effects, verify them with a follow-up tool when possible. "
         "If a tool fails, report the failure. Reply in the user's language or dialect. "
         "Use skill_learning only with concrete verified evidence. Never invent a fix, command, configuration, or verification result. "
+        "After a verified failure is followed by a verified recovery, proactively preserve the reusable lesson through skill_learning. "
         "Never store credentials, tokens, passwords, private keys, or other secrets in learned skills."
     )
 
@@ -130,6 +131,18 @@ class AgentCore:
         )
         self._record_learning_context("EXECUTION", entry)
 
+        # Autonomous learning: once a concrete tool recovery is verified, capture
+        # the reusable lesson immediately. The dedicated skill performs its own
+        # evidence/quality checks, so speculation is still rejected.
+        if name != "skill_learning":
+            try:
+                learned = self._generic_learning_save(self._learning_evidence())
+                if learned and str(learned).startswith("SKILL_SAVED:"):
+                    self._record_learning_context("AUTO_LEARNING", learned)
+            except Exception:
+                # Learning must never break the primary tool execution path.
+                pass
+
     def _learning_evidence(self):
         if not self.execution_journal:
             return ""
@@ -216,7 +229,7 @@ class AgentCore:
         )
         verification = successful_after["result"][:3500]
         return skill.execute({
-            "action": "save",
+            "action": "auto_capture",
             "name": slug,
             "title": f"Verified recovery from {failure['name']} failure",
             "description_text": f"Reusable workaround discovered after a verified failure of {failure['name']}.",
