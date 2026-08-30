@@ -1,4 +1,7 @@
 from unittest.mock import MagicMock
+
+import requests
+
 from skills.open_connector_skill import OpenConnectorSkill
 
 
@@ -6,7 +9,7 @@ def make_response(status=200, payload=None):
     response = MagicMock()
     response.ok = status < 400
     response.status_code = status
-    response.json.return_value = payload or {"success": True, "data": {}}
+    response.json.return_value = payload if payload is not None else {"success": True, "data": {}}
     return response
 
 
@@ -16,6 +19,29 @@ def test_health_calls_runtime():
     result = OpenConnectorSkill(session=session).execute({"action": "health"})
     assert '"success": true' in result.lower()
     assert session.request.call_args.args[:2] == ("GET", "http://localhost:3000/v1/health")
+
+
+def test_self_test_runs_three_non_destructive_checks():
+    session = MagicMock()
+    session.request.side_effect = [
+        make_response(payload={"success": True}),
+        make_response(payload={"providers": [{"id": "github"}]}),
+        make_response(payload={"connections": [{"name": "default"}]}),
+    ]
+    result = OpenConnectorSkill(session=session).execute({"action": "self_test"})
+    assert '"status": "ok"' in result
+    assert '"check": "health"' in result
+    assert '"check": "catalog"' in result
+    assert '"check": "connections"' in result
+    assert session.request.call_count == 3
+
+
+def test_self_test_reports_failure_without_raising():
+    session = MagicMock()
+    session.request.side_effect = [requests.exceptions.ConnectionError()]
+    result = OpenConnectorSkill(session=session).execute({"action": "self_test"})
+    assert '"status": "failed"' in result
+    assert 'not reachable' in result.lower()
 
 
 def test_execute_requires_confirmation_for_write_like_action():
@@ -43,6 +69,6 @@ def test_execute_allows_confirmed_action():
 
 def test_missing_runtime_is_reported():
     session = MagicMock()
-    session.request.side_effect = __import__("requests").exceptions.ConnectionError()
+    session.request.side_effect = requests.exceptions.ConnectionError()
     result = OpenConnectorSkill(session=session).execute({"action": "health"})
     assert "not reachable" in result
