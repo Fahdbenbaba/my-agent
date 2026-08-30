@@ -44,8 +44,13 @@ class SkillLearningSkill(BaseSkill):
     }
 
     def __init__(self, root=None):
-        project_root = Path(root or os.path.dirname(os.path.dirname(__file__)))
-        self.root = project_root / "agent_skills"
+        # Tests and callers may provide an explicit skill-library root.
+        # The default runtime location remains project_root/agent_skills.
+        if root is None:
+            project_root = Path(os.path.dirname(os.path.dirname(__file__)))
+            self.root = project_root / "agent_skills"
+        else:
+            self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
@@ -87,7 +92,7 @@ class SkillLearningSkill(BaseSkill):
             return "SKILL_REJECTED: Evidence lacks a recognizable successful/verified execution marker."
         if "unicodedecodeerror" in problem.lower() and "cp1252" in problem.lower():
             solution_lower = solution.lower()
-            if "utf-8" not in solution_lower or "errors=\"replace\"" not in solution_lower and "errors='replace'" not in solution_lower:
+            if "utf-8" not in solution_lower or ("errors=\"replace\"" not in solution_lower and "errors='replace'" not in solution_lower):
                 return "SKILL_REJECTED: Proposed encoding fix is not supported by the verified UTF-8 replacement-decoding evidence."
         return None
 
