@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from agent.core import AgentCore
 
@@ -50,3 +51,18 @@ def test_generic_learning_does_not_learn_without_recovery(tmp_path):
     core.skills = {"skill_learning": SkillLearningSkill(root=tmp_path)}
     evidence = "EXECUTION:\nTOOL: launcher\nARGUMENTS: {}\nRESULT:\nError: spawn EINVAL"
     assert core._generic_learning_save(evidence) is None
+
+
+def test_record_execution_auto_captures_verified_recovery(tmp_path):
+    core = object.__new__(AgentCore)
+    from skills.skill_learning import SkillLearningSkill
+    core.execution_journal = []
+    core._journal_path = tmp_path / "journal.jsonl"
+    core.skills = {"skill_learning": SkillLearningSkill(root=tmp_path / "skills")}
+
+    core._record_execution("launcher", {}, "Error: spawn EINVAL")
+    core._record_execution("api", {"command": "dev:api"}, "Server started successfully and listening on 127.0.0.1:3000")
+
+    learned = list((tmp_path / "skills").glob("*/SKILL.md"))
+    assert learned
+    assert "spawn EINVAL" in learned[0].read_text(encoding="utf-8")
