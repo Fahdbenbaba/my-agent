@@ -82,7 +82,10 @@ class AgentCore:
                 {"timestamp": datetime.now(timezone.utc).isoformat(), "text": self._redact(entry, 7000)}
                 for entry in self.execution_journal[-self.MAX_JOURNAL_ENTRIES:]
             ]
-            self._journal_path.write_text("\n".join(json.dumps(item, ensure_ascii=False) for item in records) + ("\n" if records else ""), encoding="utf-8")
+            self._journal_path.write_text(
+                "\n".join(json.dumps(item, ensure_ascii=False) for item in records) + ("\n" if records else ""),
+                encoding="utf-8",
+            )
         except OSError:
             pass
 
@@ -136,6 +139,33 @@ class AgentCore:
         if not self.execution_journal:
             return ""
         return "\n\n---\n\n".join(self.execution_journal)[-self.MAX_JOURNAL_CHARS:]
+
+    def _has_verified_learning_evidence(self):
+        evidence = self._learning_evidence().lower()
+        if not evidence:
+            return False
+        markers = (
+            "exit_code: 0", "success", "successfully", "verified", "working",
+            "completed", "listening on", "passed", "created successfully",
+        )
+        return any(marker in evidence for marker in markers)
+
+    @staticmethod
+    def _is_explicit_learning_save_request(query: str) -> bool:
+        text = query.lower().strip()
+        return any(
+            phrase in text
+            for phrase in (
+                "save what we learned",
+                "save what we just learned",
+                "save this as a skill",
+                "save that as a skill",
+                "save only the verified solution",
+                "extract this as a skill",
+                "extract a skill from this",
+                "create a skill from this",
+            )
+        )
 
     def _tool_definitions(self):
         tools = []
@@ -232,6 +262,17 @@ class AgentCore:
 
     def run(self, user_query: str) -> str:
         self._record_learning_context("USER_REQUEST", user_query)
+
+        if self._is_explicit_learning_save_request(user_query) and not self._has_verified_learning_evidence():
+            result = (
+                "SKILL_REJECTED: No verified execution evidence is available in the learning journal.\n"
+                "Run the task first and verify its result, or provide the exact verified problem, solution, and evidence. "
+                "The agent will not invent a lesson."
+            )
+            self._remember("user", user_query)
+            self._remember("assistant", result)
+            return result
+
         workflow = self._run_verified_browser_file_workflow(user_query)
         if workflow:
             self._remember("user", user_query)
@@ -258,8 +299,9 @@ class AgentCore:
                     last_result = result
                     function = tool_call.get("function", {})
                     name = function.get("name", "unknown")
-                    if name == "skill_learning" and str(self._normalize_arguments(function.get("arguments", {})).get("action", "")).lower() == "save":
-                        if result.startswith("SKILL_REJECTED") or result.startswith("SKILL_LEARNING_ERROR"):
+                    args = self._normalize_arguments(function.get("arguments", {}))
+                    if name == "skill_learning" and str(args.get("action", "")).lower() == "save":
+                        if result.startswith(("SKILL_REJECTED", "SKILL_LEARNING_ERROR")):
                             self._remember("user", user_query)
                             self._remember("assistant", result)
                             return result
