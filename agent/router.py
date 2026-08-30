@@ -34,24 +34,47 @@ class Router:
             return {"use_tool": True, "tool": "agent_reach", "arguments": {"action": action}}
 
         # 3. Native continuous skill learning.
-        learning_triggers = [
+        learning_list_intent = any(w in query_lower for w in [
+            "list learned skills", "show learned skills", "list skills", "/skills"
+        ])
+        learning_search_intent = any(w in query_lower for w in [
+            "search learned skills", "search a learned skill", "find learned skill",
+            "find a learned skill", "search skills for", "find skills for"
+        ])
+        learning_save_intent = any(w in query_lower for w in [
             "save this as a skill", "save what we learned as a skill",
             "extract a skill from this", "extract this as a skill",
-            "create a skill from this", "what did we learn",
-            "what have we learned", "search learned skills", "find learned skill",
-            "list learned skills", "/learn", "/skills", "learned skills",
-        ]
-        if any(trigger in query_lower for trigger in learning_triggers):
-            if any(x in query_lower for x in ["list learned skills", "learned skills", "/skills"]):
-                action = "list"
-            elif any(x in query_lower for x in ["what did we learn", "what have we learned", "find learned skill", "search learned skills"]):
+            "create a skill from this", "save what we learned"
+        ])
+        learning_recall_intent = any(w in query_lower for w in [
+            "what did we learn", "what have we learned"
+        ])
+
+        if learning_list_intent or learning_search_intent or learning_save_intent or learning_recall_intent:
+            if learning_search_intent or learning_recall_intent:
                 action = "search"
-            else:
-                action = "save"
+                search_query = text
+                search_query = re.sub(
+                    r"(?i)^.*?\b(?:search|find)\s+(?:a\s+)?learned\s+skill(?:s)?\s*(?:for|about|matching)?\s*",
+                    "",
+                    search_query,
+                ).strip()
+                search_query = search_query or text
+                return {
+                    "use_tool": True,
+                    "tool": "skill_learning",
+                    "arguments": {"action": action, "query": search_query},
+                }
+            if learning_list_intent:
+                return {
+                    "use_tool": True,
+                    "tool": "skill_learning",
+                    "arguments": {"action": "list", "query": text},
+                }
             return {
                 "use_tool": True,
                 "tool": "skill_learning",
-                "arguments": {"action": action, "query": text},
+                "arguments": {"action": "save", "query": text},
             }
 
         # 4. Agent Reach web/GitHub/YouTube/RSS intent.
@@ -95,17 +118,14 @@ class Router:
             return {"use_tool": True, "tool": "agent_reach", "arguments": {"action": "read", "url": clean_url}}
 
         # 5. OpenConnector runtime.
-        if any(w in query_lower for w in [
-            "openconnector", "open connector", "connector health", "connector providers",
-            "connector actions", "oauth", "connect github", "connections"
-        ]):
+        if any(w in query_lower for w in ["openconnector", "open connector", "connector health", "connector providers", "connector actions", "oauth", "connect github"]):
             if "health" in query_lower:
                 action = "health"
             elif "provider" in query_lower:
                 action = "providers"
             elif "oauth" in query_lower:
                 action = "oauth_configs"
-            elif "connect" in query_lower or "connections" in query_lower:
+            elif "connect" in query_lower and "github" in query_lower:
                 action = "connections"
             elif "search" in query_lower:
                 action = "search_actions"
