@@ -96,7 +96,7 @@ class OpenConnectorSkill(BaseSkill):
         checks = []
         for label, method, path in (
             ("health", "GET", "/v1/health"),
-            ("catalog", "GET", "/v1/catalog"),
+            ("catalog", "GET", "/v1/actions"),
             ("connections", "GET", "/api/connections"),
         ):
             payload, error = self._request(method, path, headers=self._headers())
@@ -112,7 +112,10 @@ class OpenConnectorSkill(BaseSkill):
         if not isinstance(payload, dict):
             return "response received"
         if label == "catalog":
-            for key in ("providers", "apps", "data"):
+            data = payload.get("data")
+            if isinstance(data, list):
+                return f"{len(data)} entries"
+            for key in ("providers", "actions"):
                 value = payload.get(key)
                 if isinstance(value, list):
                     return f"{len(value)} entries"
@@ -140,7 +143,7 @@ class OpenConnectorSkill(BaseSkill):
         if action == "health":
             payload, error = self._request("GET", "/v1/health", headers=self._headers())
         elif action == "providers":
-            payload, error = self._request("GET", "/v1/catalog", headers=self._headers())
+            payload, error = self._request("GET", "/v1/providers", headers=self._headers())
         elif action == "provider":
             service = str(arguments.get("service", "")).strip()
             if not service:
