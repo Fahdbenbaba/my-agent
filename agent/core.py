@@ -13,6 +13,8 @@ class AgentCore:
 
     MAX_TOOL_STEPS = 8
     MAX_HISTORY_MESSAGES = 12
+    MAX_JOURNAL_ENTRIES = 8
+    MAX_JOURNAL_CHARS = 24000
 
     SYSTEM_PROMPT = (
         "You are a helpful, friendly, conversational autonomous AI agent. "
@@ -31,7 +33,9 @@ class AgentCore:
         "do not save ordinary documentation lookups or one-off facts. Search existing "
         "learned skills before creating a duplicate. Never store credentials, tokens, "
         "passwords, private keys, or other secrets in learned skills. A learned skill "
-        "must contain a precise trigger, reusable solution, and verification evidence."
+        "must contain a precise trigger, reusable solution, verification evidence, and "
+        "must be grounded in the actual execution/evidence context. Never invent a fix, "
+        "command, configuration, or verification result that is not supported by evidence."
     )
 
     def __init__(self, model_name="qwen3:1.7b"):
@@ -39,6 +43,7 @@ class AgentCore:
         self.client = OllamaClient(model_name=model_name)
         self.skills = {}
         self.history = []
+        self.execution_journal = []
         self._load_skills()
 
     def _load_skills(self):
@@ -63,11 +68,27 @@ class AgentCore:
 
     def clear_history(self):
         self.history.clear()
+        self.execution_journal.clear()
 
     def _remember(self, role, content):
         if content:
             self.history.append({"role": role, "content": str(content)})
             self.history = self.history[-self.MAX_HISTORY_MESSAGES:]
+
+    def _record_execution(self, name, arguments, result):
+        entry = (
+            f"TOOL: {name}\n"
+            f"ARGUMENTS: {json.dumps(arguments, ensure_ascii=False, default=str)}\n"
+            f"RESULT:\n{str(result)[:6000]}"
+        )
+        self.execution_journal.append(entry)
+        self.execution_journal = self.execution_journal[-self.MAX_JOURNAL_ENTRIES:]
+
+    def _learning_evidence(self):
+        if not self.execution_journal:
+            return ""
+        text = "\n\n---\n\n".join(self.execution_journal)
+        return text[-self.MAX_JOURNAL_CHARS:]
 
     def _tool_definitions(self):
         tools = []
@@ -114,12 +135,22 @@ class AgentCore:
         if name not in self.skills:
             return f"Tool Error: Unknown tool '{name}'."
         try:
+            if name == "skill_learning" and isinstance(arguments, dict) and str(arguments.get("action", "")).lower() == "save":
+                arguments = dict(arguments)
+                if not str(arguments.get("evidence", "")).strip():
+                    evidence = self._learning_evidence()
+                    if evidence:
+                        arguments["evidence"] = evidence
+                        arguments.setdefault("source", "verified execution journal")
             result = self.skills[name].execute(arguments)
             if name == "web_search":
                 result = EvidenceGuard.filter_web_evidence(str(arguments.get("query", "")), str(result))
+            self._record_execution(name, arguments, result)
             return str(result)
         except Exception as e:
-            return f"Tool Error in '{name}': {e}"
+            result = f"Tool Error in '{name}': {e}"
+            self._record_execution(name, arguments, result)
+            return result
 
     def _execute_tool_call(self, tool_call):
         function = tool_call.get("function", {}) if isinstance(tool_call, dict) else {}
