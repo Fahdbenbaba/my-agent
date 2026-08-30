@@ -63,5 +63,23 @@ def test_router_agent_reach_rss():
     assert result["arguments"]["url"] == "https://example.com/feed.xml"
 
 
+def test_router_openconnector_smoke_test():
+    result = Router().route("Run OpenConnector smoke test")
+    assert result["tool"] == "open_connector"
+    assert result["arguments"]["action"] == "self_test"
+
+
+def test_router_learning_list():
+    result = Router().route("List learned skills")
+    assert result["tool"] == "skill_learning"
+    assert result["arguments"]["action"] == "list"
+
+
+def test_router_learning_search():
+    result = Router().route("Search learned skills for spawn EINVAL Windows")
+    assert result["tool"] == "skill_learning"
+    assert result["arguments"]["action"] == "search"
+
+
 def test_router_unknown():
     assert Router().route("hello there")["use_tool"] is False
