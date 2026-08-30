@@ -24,7 +24,14 @@ class AgentCore:
         "Use tools when useful and call multiple tools in sequence when needed. "
         "NEVER claim a tool action happened unless its actual result confirms success. "
         "For side effects, verify them with a follow-up tool when possible. "
-        "If a tool fails, report the failure. Reply in the user's language or dialect."
+        "If a tool fails, report the failure. Reply in the user's language or dialect. "
+        "You have a skill_learning tool for continuous learning. After a meaningful "
+        "debugging discovery, non-obvious workaround, project-specific pattern, or "
+        "verified tool integration, consider extracting a reusable skill. Be selective: "
+        "do not save ordinary documentation lookups or one-off facts. Search existing "
+        "learned skills before creating a duplicate. Never store credentials, tokens, "
+        "passwords, private keys, or other secrets in learned skills. A learned skill "
+        "must contain a precise trigger, reusable solution, and verification evidence."
     )
 
     def __init__(self, model_name="qwen3:1.7b"):
