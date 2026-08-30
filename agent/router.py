@@ -33,7 +33,28 @@ class Router:
             )
             return {"use_tool": True, "tool": "agent_reach", "arguments": {"action": action}}
 
-        # 3. Agent Reach web/GitHub/YouTube/RSS intent.
+        # 3. Native continuous skill learning.
+        learning_triggers = [
+            "save this as a skill", "save what we learned as a skill",
+            "extract a skill from this", "extract this as a skill",
+            "create a skill from this", "what did we learn",
+            "what have we learned", "search learned skills", "find learned skill",
+            "list learned skills", "/learn", "/skills", "learned skills",
+        ]
+        if any(trigger in query_lower for trigger in learning_triggers):
+            if any(x in query_lower for x in ["list learned skills", "learned skills", "/skills"]):
+                action = "list"
+            elif any(x in query_lower for x in ["what did we learn", "what have we learned", "find learned skill", "search learned skills"]):
+                action = "search"
+            else:
+                action = "save"
+            return {
+                "use_tool": True,
+                "tool": "skill_learning",
+                "arguments": {"action": action, "query": text},
+            }
+
+        # 4. Agent Reach web/GitHub/YouTube/RSS intent.
         url_match = re.search(r"https?://\S+", text, re.I)
         clean_url = url_match.group(0).rstrip(".,)") if url_match else ""
 
@@ -41,9 +62,7 @@ class Router:
             "read this", "read url", "read the page", "read this page", "read the url",
             "fetch this", "fetch url", "fetch the page", "fetch the url",
             "scrape this", "extract from", "get content from", "analyze this page",
-            "read ", "fetch ",
         ])
-        # A URL plus a direct read/fetch verb is unambiguously a web-read request.
         if clean_url and re.match(r"^(read|fetch|scrape)\b", query_lower):
             read_intent = True
 
@@ -56,62 +75,45 @@ class Router:
         if search_github:
             search_query = re.sub(r"(?i)\b(?:search|find|look for|look up)\s+(?:on\s+)?github\s*(?:for|:)?\s*", "", text).strip()
             search_query = search_query or text
-            return {
-                "use_tool": True,
-                "tool": "agent_reach",
-                "arguments": {"action": "github", "query": search_query},
-            }
+            return {"use_tool": True, "tool": "agent_reach", "arguments": {"action": "github", "query": search_query}}
 
         if github_intent and clean_url:
-            return {
-                "use_tool": True,
-                "tool": "agent_reach",
-                "arguments": {"action": "github", "url": clean_url},
-            }
+            return {"use_tool": True, "tool": "agent_reach", "arguments": {"action": "github", "url": clean_url}}
 
         if search_youtube:
             search_query = re.sub(r"(?i)\b(?:search|find|look for)\s+(?:on\s+)?youtube\s*(?:for|:)?\s*", "", text).strip()
             search_query = search_query or text
-            return {
-                "use_tool": True,
-                "tool": "agent_reach",
-                "arguments": {"action": "youtube", "query": search_query},
-            }
+            return {"use_tool": True, "tool": "agent_reach", "arguments": {"action": "youtube", "query": search_query}}
 
         if youtube_intent and clean_url:
-            return {
-                "use_tool": True,
-                "tool": "agent_reach",
-                "arguments": {"action": "youtube", "url": clean_url},
-            }
+            return {"use_tool": True, "tool": "agent_reach", "arguments": {"action": "youtube", "url": clean_url}}
 
         if rss_intent and clean_url:
-            return {
-                "use_tool": True,
-                "tool": "agent_reach",
-                "arguments": {"action": "rss", "url": clean_url},
-            }
+            return {"use_tool": True, "tool": "agent_reach", "arguments": {"action": "rss", "url": clean_url}}
 
         if read_intent and clean_url:
-            return {
-                "use_tool": True,
-                "tool": "agent_reach",
-                "arguments": {"action": "read", "url": clean_url},
-            }
+            return {"use_tool": True, "tool": "agent_reach", "arguments": {"action": "read", "url": clean_url}}
 
-        # 4. OpenConnector runtime.
-        if any(w in query_lower for w in ["openconnector", "open connector", "connector health", "connector providers", "connector actions"]):
+        # 5. OpenConnector runtime.
+        if any(w in query_lower for w in [
+            "openconnector", "open connector", "connector health", "connector providers",
+            "connector actions", "oauth", "connect github", "connections"
+        ]):
             if "health" in query_lower:
                 action = "health"
             elif "provider" in query_lower:
                 action = "providers"
+            elif "oauth" in query_lower:
+                action = "oauth_configs"
+            elif "connect" in query_lower or "connections" in query_lower:
+                action = "connections"
             elif "search" in query_lower:
                 action = "search_actions"
             else:
                 action = "list_actions"
             return {"use_tool": True, "tool": "open_connector", "arguments": {"action": action, "query": text}}
 
-        # 5. Browser/navigation. Keep explicit browser/open/visit requests on the browser skill.
+        # 6. Browser/navigation.
         browser_patterns = [
             "open url", "open website", "open site", "open http", "open https",
             "browse to", "visit", "go to", "browser", "موقع", "متصفح"
@@ -120,7 +122,7 @@ class Router:
             url = clean_url if url_match else text
             return {"use_tool": True, "tool": "browser", "arguments": {"url": url}}
 
-        # 6. Database: use explicit DB/SQL intent before generic file/list words.
+        # 7. Database.
         database_patterns = [
             "create sqlite database", "create a sqlite database", "create database",
             "create a database", "database", "sqlite", "sql query", "run sql",
@@ -135,7 +137,7 @@ class Router:
                 return {"use_tool": True, "tool": "database", "arguments": {"query": sql, "db_path": db_name}}
             return {"use_tool": True, "tool": "database", "arguments": {"query": sql}}
 
-        # 7. Git. Only handle local git commands here; GitHub research is routed above.
+        # 8. Git. Only local git commands here; GitHub research is routed above.
         git_patterns = [
             "git status", "git diff", "git log", "git branch", "git commit",
             "git add", "git restore", "git checkout", "git repo", "git repository",
@@ -154,11 +156,11 @@ class Router:
                 command = "status"
             return {"use_tool": True, "tool": "git_manager", "arguments": {"command": command}}
 
-        # 8. Calculator
+        # 9. Calculator
         if any(w in query_lower for w in ["calculate", "math", "حساب", "+", "-", "*", "/"]):
             return {"use_tool": True, "tool": "calculator", "arguments": {"expression": text}}
 
-        # 9. Memory
+        # 10. Memory
         memory_words = [
             "remember", "recall", "memory", "what do you remember", "what do you know about me",
             "what did you remember", "retrieve", "remember about me", "what is my", "what's my",
@@ -181,7 +183,7 @@ class Router:
                         break
             return {"use_tool": True, "tool": "memory", "arguments": {"action": action, "text": memory_text}}
 
-        # 10. File Manager
+        # 11. File Manager
         file_words = ["file", "files", "dir", "directory", "folder", "show", "list", "create file", "make a file", "write to", "read file", "ملف", "ملفات"]
         if any(w in query_lower for w in file_words):
             create_match = re.search(r"(?:create|make|write)\s+(?:a\s+)?file\s+(?:called|named)?\s*['\"]?([^'\"\s]+)['\"]?\s+(?:with|containing)\s+(?:the\s+)?(?:text|content)?\s*[:=]?\s*['\"]?(.*?)['\"]?$", text, re.I)
@@ -194,7 +196,7 @@ class Router:
                 return {"use_tool": True, "tool": "file_manager", "arguments": {"action": "read", "filepath": read_match.group(1).strip()}}
             return {"use_tool": True, "tool": "file_manager", "arguments": {"action": "list", "filepath": "."}}
 
-        # 11. Web Search
+        # 12. Web Search
         if any(w in query_lower for w in ["search", "google", "web", "بحث", "ابحث"]):
             return {"use_tool": True, "tool": "web_search", "arguments": {"query": text}}
 
