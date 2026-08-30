@@ -69,6 +69,22 @@ def test_router_openconnector_smoke_test():
     assert result["arguments"]["action"] == "self_test"
 
 
+def test_router_openconnector_execute_action():
+    result = Router().route("Execute OpenConnector action github.get_repository")
+    assert result["tool"] == "open_connector"
+    assert result["arguments"]["action"] == "execute"
+    assert result["arguments"]["action_id"] == "github.get_repository"
+    assert result["arguments"]["confirm"] is False
+
+
+def test_router_openconnector_confirmed_execute_action():
+    result = Router().route("Run OpenConnector action github.create_issue confirmed")
+    assert result["tool"] == "open_connector"
+    assert result["arguments"]["action"] == "execute"
+    assert result["arguments"]["action_id"] == "github.create_issue"
+    assert result["arguments"]["confirm"] is True
+
+
 def test_router_learning_list():
     result = Router().route("List learned skills")
     assert result["tool"] == "skill_learning"
