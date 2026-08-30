@@ -14,11 +14,13 @@ def test_save_and_get_skill(tmp_path: Path):
         "triggers": ["Node.js on Windows", "spawn EINVAL", "npm.cmd child process"],
         "solution": "Run the API entrypoint directly instead of the wrapper that spawns npm.cmd, or use a Windows shell-compatible process launch strategy.",
         "verification": "The API runtime starts and listens successfully on localhost:3000.",
+        "evidence": "EXIT_CODE: 0\nconnect server listening\nurl: http://127.0.0.1:3000",
         "notes": "Keep the workaround specific to Windows process spawning and verify against the installed Node version.",
     })
     assert result.startswith("SKILL_SAVED:")
     saved = skill.execute({"action": "get", "name": "windows-npm-spawn-einval"})
     assert "spawn EINVAL" in saved
+    assert "127.0.0.1:3000" in saved
 
 
 def test_secret_content_is_redacted(tmp_path: Path):
@@ -31,6 +33,7 @@ def test_secret_content_is_redacted(tmp_path: Path):
         "problem": "Do not persist client secret values.",
         "solution": "Never store client_secret: supersecret-value in a learned skill.",
         "verification": "The stored document contains no raw credential value.",
+        "evidence": "Verification passed successfully; credential value was redacted.",
     })
     assert "supersecret-value" not in result
     saved = skill.execute({"action": "get", "name": "secret-test"})
@@ -43,3 +46,4 @@ def test_router_learning_commands():
 
     assert Router().route("Save this as a skill") ["tool"] == "skill_learning"
     assert Router().route("List learned skills") ["arguments"]["action"] == "list"
+    assert Router().route("Search learned skills for spawn EINVAL Windows")["arguments"]["action"] == "search"
