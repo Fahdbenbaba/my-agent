@@ -36,5 +36,32 @@ def test_router_search():
     assert result["tool"] == "web_search"
 
 
+def test_router_agent_reach_read():
+    result = Router().route("Read https://example.com")
+    assert result["tool"] == "agent_reach"
+    assert result["arguments"] == {"action": "read", "url": "https://example.com"}
+
+
+def test_router_agent_reach_github():
+    result = Router().route("Search GitHub for qwen")
+    assert result["tool"] == "agent_reach"
+    assert result["arguments"]["action"] == "github"
+    assert result["arguments"]["query"] == "qwen"
+
+
+def test_router_agent_reach_youtube():
+    result = Router().route("Search YouTube for Python tutorials")
+    assert result["tool"] == "agent_reach"
+    assert result["arguments"]["action"] == "youtube"
+    assert result["arguments"]["query"] == "Python tutorials"
+
+
+def test_router_agent_reach_rss():
+    result = Router().route("Read this RSS feed https://example.com/feed.xml")
+    assert result["tool"] == "agent_reach"
+    assert result["arguments"]["action"] == "rss"
+    assert result["arguments"]["url"] == "https://example.com/feed.xml"
+
+
 def test_router_unknown():
     assert Router().route("hello there")["use_tool"] is False
