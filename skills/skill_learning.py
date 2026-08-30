@@ -24,28 +24,13 @@ class SkillLearningSkill(BaseSkill):
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "action": {
-                        "type": "string",
-                        "enum": ["list", "search", "save", "get"],
-                    },
-                    "name": {
-                        "type": "string",
-                        "description": "Skill slug for save/get (kebab-case).",
-                    },
-                    "query": {
-                        "type": "string",
-                        "description": "Search terms for existing learned skills.",
-                    },
+                    "action": {"type": "string", "enum": ["list", "search", "save", "get"]},
+                    "name": {"type": "string", "description": "Skill slug for save/get (kebab-case)."},
+                    "query": {"type": "string", "description": "Search terms for existing learned skills."},
                     "title": {"type": "string"},
-                    "description_text": {
-                        "type": "string",
-                        "description": "Precise reusable trigger-oriented description.",
-                    },
+                    "description_text": {"type": "string", "description": "Precise reusable trigger-oriented description."},
                     "problem": {"type": "string"},
-                    "triggers": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                    },
+                    "triggers": {"type": "array", "items": {"type": "string"}},
                     "solution": {"type": "string"},
                     "verification": {"type": "string"},
                     "notes": {"type": "string"},
@@ -69,7 +54,6 @@ class SkillLearningSkill(BaseSkill):
     @staticmethod
     def _clean(value: str, limit=12000) -> str:
         text = str(value or "").strip()
-        # Never persist credentials, bearer tokens, private keys, or obvious secrets.
         secret_patterns = [
             r"(?i)(api[_ -]?key|client[_ -]?secret|access[_ -]?token|refresh[_ -]?token|password|authorization)\s*[:=]\s*[^\s]+",
             r"(?i)bearer\s+[A-Za-z0-9._~+/=-]+",
@@ -133,10 +117,8 @@ class SkillLearningSkill(BaseSkill):
         if len(content.strip()) < 80:
             return "SKILL_REJECTED: Knowledge is too thin to be reusable."
 
-        suspicious = ("[REDACTED_SECRET]" in content and any(token in content.lower() for token in ("token", "secret", "password", "api key")))
-        if suspicious:
-            return "SKILL_REJECTED: Sensitive credential-like content was detected."
-
+        # Redaction is a hard safety boundary, not a reason to discard an otherwise reusable lesson.
+        # The saved artifact contains the safe placeholder instead of the raw secret.
         target = self.root / slug / "SKILL.md"
         existing = self._read(target) if target.exists() else ""
         if existing:
