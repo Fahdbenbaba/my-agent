@@ -92,7 +92,7 @@ class OpenConnectorSkill(BaseSkill):
         return payload
 
     def _self_test(self):
-        """Non-destructive runtime smoke test: health + catalog + connections."""
+        """Non-destructive runtime smoke test: stop after the first failed prerequisite."""
         checks = []
         for label, method, path in (
             ("health", "GET", "/v1/health"),
@@ -102,9 +102,9 @@ class OpenConnectorSkill(BaseSkill):
             payload, error = self._request(method, path, headers=self._headers())
             if payload is None or error:
                 checks.append({"check": label, "ok": False, "error": error or "no response"})
-            else:
-                checks.append({"check": label, "ok": True, "summary": self._summarize_payload(payload, label)})
-        ok = all(item["ok"] for item in checks)
+                break
+            checks.append({"check": label, "ok": True, "summary": self._summarize_payload(payload, label)})
+        ok = len(checks) == 3 and all(item["ok"] for item in checks)
         return json.dumps({"status": "ok" if ok else "failed", "runtime": self.base_url, "checks": checks}, ensure_ascii=False, indent=2)
 
     @staticmethod
