@@ -14,7 +14,8 @@ class SkillLearningSkill(BaseSkill):
     description = (
         "Learn reusable knowledge from verified debugging, workarounds, project patterns, "
         "and tool discoveries. Learned content must be grounded in concrete evidence, not "
-        "model-only speculation."
+        "model-only speculation. After a debugging recovery is verified, proactively use "
+        "auto_capture to persist the reusable lesson without requiring a separate user save request."
     )
     schema = {
         "type": "function",
@@ -24,7 +25,7 @@ class SkillLearningSkill(BaseSkill):
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "action": {"type": "string", "enum": ["list", "search", "save", "get"]},
+                    "action": {"type": "string", "enum": ["list", "search", "save", "get", "auto_capture"]},
                     "name": {"type": "string"},
                     "query": {"type": "string"},
                     "title": {"type": "string"},
@@ -164,7 +165,7 @@ class SkillLearningSkill(BaseSkill):
         if not isinstance(arguments, dict):
             return "Skill Learning Error: arguments must be a dictionary."
         action = str(arguments.get("action", "")).strip().lower()
-        if action not in {"list", "search", "save", "get"}:
+        if action not in {"list", "search", "save", "get", "auto_capture"}:
             return f"Skill Learning Error: Unsupported action '{action}'."
         if action == "list":
             paths = self._paths()
