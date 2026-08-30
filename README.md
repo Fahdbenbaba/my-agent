@@ -1,12 +1,15 @@
 # 🚀 My Agent — Local Modular AI Agent
 
-> A local-first AI agent built in Python that can **reason, route, execute real tools, verify results, connect to external services, and learn reusable skills from verified experience**.
+> A local-first AI agent built in Python that can **reason, route, execute real tools, verify results, and accumulate reusable knowledge from verified experience**.
 
-My Agent is a modular agent architecture built around **Ollama + Qwen 3 1.7B** for local reasoning and a growing set of specialized skills for real-world execution.
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+My Agent is a modular agent architecture built around **Ollama + Qwen 3 1.7B** for local reasoning and a set of specialized skills for real-world execution.
 
 The core design principle is:
 
-> **The model decides what should happen. Skills perform the work. Verification checks that the work happened. Continuous learning preserves verified discoveries for future tasks.**
+> **The model decides what should happen. Skills perform the work. Verification checks that the work actually happened. Learning preserves verified discoveries for future tasks.**
 
 ---
 
@@ -31,34 +34,67 @@ The core design principle is:
 | 🧩 Multi-provider SaaS Actions | ✅ Integrated through OpenConnector |
 | 🔁 Multi-step Execution | ✅ Working |
 | ✔️ Action Verification | ✅ Working |
+| 📝 Persistent Execution Journal | ✅ Working |
+| 🧪 Automated Tests | ✅ Working |
 
 ---
 
 ## 🧠 Continuous Skill Learning
 
-My Agent includes a native Python implementation inspired by the continuous-learning ideas of Claudeception, adapted to the project's existing `BaseSkill` architecture rather than depending on Claude Code's skill runtime.
+Inspired by the core idea behind Claudeception, My Agent can turn **verified discoveries** into reusable Markdown skills. The implementation is native to the Python architecture rather than depending on Claude Code hooks.
 
-The learning system stores reusable lessons as Markdown under `agent_skills/<skill-name>/SKILL.md` and supports:
-
-- Searching and listing learned skills
-- Saving verified discoveries
-- Updating an existing skill version instead of blindly duplicating it
-- Precise trigger conditions, problem, solution, verification, notes, and optional references
-- Secret redaction for API keys, tokens, passwords, bearer tokens, and private-key material
-- Quality gates that reject thin or non-reusable knowledge
-- Explicit learning requests such as `Save this as a skill` and `What did we learn?`
-- LLM guidance to consider skill extraction after non-obvious debugging, workarounds, project-specific discoveries, and verified integrations
-
-Example intents:
+The learning system is intentionally evidence-first:
 
 ```text
-Save what we just learned as a skill
-What did we learn?
-List learned skills
-Search learned skills for Windows spawn EINVAL
+Task
+  ↓
+Real tool execution
+  ↓
+Execution result / verification
+  ↓
+Persistent learning journal
+  ↓
+Skill extraction
+  ↓
+Quality gates + secret redaction
+  ↓
+Reusable SKILL.md
+  ↓
+Future retrieval
 ```
 
-A learned skill is not created merely because a task was completed. The intended standard is: **reusable + non-trivial + specific + verified**.
+### What can be learned
+
+The agent should consider creating a skill after:
+
+- non-obvious debugging discoveries
+- verified workarounds
+- project-specific patterns
+- verified integration/configuration fixes
+
+It should **not** turn ordinary documentation lookups or one-off facts into skills.
+
+### Quality gates
+
+A learned skill must have a concrete trigger, reusable solution, and verification evidence. The learning layer rejects model-only speculation, prevents known contradictory fixes, and redacts credentials, tokens, passwords, and private keys before persistence.
+
+The execution journal is persisted under:
+
+```text
+agent_memory/learning_journal.jsonl
+```
+
+This lets verified execution context survive across agent restarts.
+
+### Bootstrap knowledge
+
+The repository contains one verified initial lesson from local development:
+
+```text
+agent_skills/windows-openconnector-spawn-einval/SKILL.md
+```
+
+It records the observed Windows `spawn EINVAL` problem with the OpenConnector development launcher and the verified direct API runtime workaround.
 
 ---
 
@@ -68,15 +104,14 @@ My Agent has two complementary external capability layers.
 
 ### Agent Reach
 
-Agent Reach is the public-internet capability layer. The integration supports:
+Agent Reach is used for public internet content and research workflows:
 
-- Web page reading through the configured Jina Reader backend
-- Web search through the existing search provider abstraction
+- Public web page reading through Jina Reader
 - Public GitHub repository search and public GitHub page/file reading
 - YouTube search and public video metadata through `yt-dlp`
 - RSS / Atom feed reading
-- `doctor`, `status`, and capability discovery
-- Windows-safe UTF-8 decoding for CLI output
+- CLI diagnostics and capability discovery
+- Windows-safe CLI output handling
 
 Examples:
 
@@ -88,27 +123,22 @@ Read https://example.com/feed.xml as an RSS feed
 Run Agent Reach doctor
 ```
 
-The local Agent Reach installation is detected through the `agent-reach` CLI. The bridge does not automatically install software or credentials.
-
 ### OpenConnector
 
-OpenConnector is the connected-app / authenticated action layer. It provides a local runtime where provider credentials remain behind the connector boundary while the agent discovers and executes provider Actions.
+OpenConnector is used as the connected-app / authenticated action layer. It provides a local runtime where provider credentials remain behind the connector boundary while the agent discovers and executes provider Actions.
 
-The My Agent integration supports:
+Supported integration areas include:
 
 - Runtime health checks
-- Provider/catalog discovery
-- Provider credential metadata
+- Provider and action catalog discovery
 - Connection discovery
-- OAuth configuration discovery
-- Starting OAuth authorization flows
-- Action listing and search
-- Action contract retrieval
-- Action execution
+- OAuth configuration and authorization flows
+- Action listing/search/contract retrieval
+- Provider Action execution
 - Named connection selection
-- Confirmation gates for actions likely to create external side effects
+- Confirmation gates for potentially side-effectful operations
 
-The local OpenConnector runtime uses Node.js and can expose:
+Local development runtime:
 
 ```text
 API runtime:  http://localhost:3000
@@ -128,45 +158,34 @@ Web console:  http://localhost:5173
                                │ Orchestration   │
                                └────────┬────────┘
                                         │
-                                        ▼
-                               ┌─────────────────┐
-                               │     ROUTER      │
-                               │ Intent → Skill │
-                               └────────┬────────┘
-                                        │
-             ┌──────────────────────────┼─────────────────────────────┐
-             │                          │                             │
-             ▼                          ▼                             ▼
-        Local Skills              Agent Reach                 OpenConnector
-             │                          │                             │
-    ┌────────┼────────┐        ┌────────┼────────┐        ┌───────────┼──────────┐
-    ▼        ▼        ▼        ▼        ▼        ▼        ▼           ▼          ▼
- Calculator Memory  Files     Web    GitHub   YouTube  Providers     OAuth     Actions
-    │        │        │        │        │        │        │           │          │
-    └────────┴────────┴────────┴────────┴────────┴────────┴───────────┴──────────┘
-                                        │
-                                        ▼
-                              ┌────────────────────┐
-                              │ VERIFICATION /     │
-                              │ EVIDENCE GUARD     │
-                              └──────────┬─────────┘
-                                         ▼
-                              ┌────────────────────┐
-                              │ SKILL LEARNING     │
-                              │ Preserve verified  │
-                              │ reusable knowledge │
-                              └──────────┬─────────┘
-                                         ▼
-                                    FINAL RESULT
+                     ┌──────────────────┼──────────────────┐
+                     │                  │                  │
+                     ▼                  ▼                  ▼
+                  ROUTER          TOOL EXECUTION      LEARNING JOURNAL
+                     │                  │                  │
+       ┌─────────────┼─────────────┐    │                  │
+       ▼             ▼             ▼    ▼                  ▼
+ Local Skills    Agent Reach   OpenConnector      Verified Context
+       │             │             │                    │
+       └─────────────┴─────────────┴────────────────────┘
+                              │
+                              ▼
+                     Evidence / Verification
+                              │
+                              ▼
+                       Skill Learning Engine
+                              │
+                              ▼
+                       Reusable SKILL.md
 ```
 
-The system separates **reasoning**, **execution**, **verification**, and **learning**. Tool results are not treated as facts unless the tool actually returned them, and learned knowledge is only persisted after quality checks.
+The LLM is **not** treated as the source of truth for tool results. Tool output and verification evidence are kept separate from model reasoning, then reused by the learning layer.
 
 ---
 
 ## 🧩 Skill System
 
-Every runtime skill follows the common `BaseSkill` interface:
+Every skill follows a common interface through `BaseSkill`:
 
 ```python
 class BaseSkill(ABC):
@@ -179,61 +198,38 @@ class BaseSkill(ABC):
         ...
 ```
 
-Current runtime skills include:
+Current skills include:
 
-- **Calculator** — mathematical expressions
-- **Memory** — persistent long-term memory using ChromaDB
-- **Skill Learning** — save, search, list, and retrieve reusable learned knowledge
-- **File Manager** — create, read, and list workspace files
-- **Python Sandbox** — execute Python code with restrictions
-- **Browser** — navigate and inspect web pages through Playwright
-- **Web Search** — search the web with provider abstraction and evidence handling
-- **Git Manager** — safe Git repository operations
-- **Database** — local SQLite database operations
-- **Agent Reach** — public internet content access and capability discovery
-- **OpenConnector** — connected-app discovery, OAuth, and provider Action execution
+- Calculator
+- Memory
+- File Manager
+- Python Sandbox
+- Browser
+- Web Search
+- Git Manager
+- Database
+- Agent Reach
+- OpenConnector
+- Skill Learning
 
-### Agent Reach Routing
-
-```text
-User request
-    │
-    ├── Read public URL ───────────────► Agent Reach / Web
-    ├── Search GitHub ─────────────────► Agent Reach / GitHub
-    ├── Search YouTube ────────────────► Agent Reach / YouTube
-    └── Read RSS / Atom ───────────────► Agent Reach / RSS
-```
-
-### OpenConnector Routing
+### Skill Learning actions
 
 ```text
-User request
-    │
-    ├── providers / connections ───────► OpenConnector discovery
-    ├── OAuth / login ─────────────────► OpenConnector OAuth
-    ├── action search ─────────────────► OpenConnector action catalog
-    └── execute an app action ──────────► OpenConnector runtime
+list    → list learned skills
+search  → search learned skills
+save    → save a verified reusable lesson
+get     → retrieve one learned skill
 ```
 
-### Learning Routing
+Example:
 
 ```text
-User request / completed discovery
-            │
-            ▼
-     Skill Learning Tool
-            │
-      ┌─────┴─────┐
-      ▼           ▼
-   search       save/update
-      │           │
-      └─────┬─────┘
-            ▼
-      agent_skills/
-            │
-            ▼
-     Future retrieval
+List learned skills
+Search learned skills for spawn EINVAL Windows
+Save what we learned as a reusable skill
 ```
+
+The save operation requires enough verified evidence to prevent hallucinated lessons.
 
 ---
 
@@ -243,33 +239,39 @@ User request / completed discovery
 my-agent/
 │
 ├── agent/
-│   ├── core.py                  # Agent orchestration and execution
-│   ├── router.py                # Intent → skill routing
-│   └── evidence_guard.py        # Web evidence / grounding checks
+│   ├── core.py
+│   ├── router.py
+│   └── evidence_guard.py
 │
 ├── skills/
-│   ├── base_skill.py            # Shared abstract skill interface
-│   ├── calculator.py            # Calculator
-│   ├── memory_skill.py          # ChromaDB long-term memory
-│   ├── skill_learning.py        # Continuous reusable-skill learning
-│   ├── file_manager.py          # Workspace file operations
-│   ├── python_sandbox.py        # Restricted Python execution
-│   ├── browser_skill.py         # Browser automation
-│   ├── web_search_skill.py      # Web search orchestration
-│   ├── agent_reach_skill.py     # Agent Reach integration
-│   ├── open_connector_skill.py  # OpenConnector integration
-│   ├── search_providers/        # Search provider implementations
-│   ├── git_skill.py             # Git operations
-│   └── database_skill.py        # SQLite operations
+│   ├── base_skill.py
+│   ├── calculator.py
+│   ├── memory_skill.py
+│   ├── file_manager.py
+│   ├── python_sandbox.py
+│   ├── browser_skill.py
+│   ├── web_search_skill.py
+│   ├── agent_reach_skill.py
+│   ├── open_connector_skill.py
+│   ├── skill_learning.py
+│   ├── search_providers/
+│   ├── git_skill.py
+│   └── database_skill.py
 │
-├── agent_skills/                # Persisted learned Markdown skills
-├── models/                      # Local LLM client
-├── agent_memory/                # Persistent ChromaDB storage
-├── tests/                       # Automated tests
-├── main.py                      # CLI entry point
-├── requirements.txt             # Python dependencies
-├── pytest.ini                   # Pytest configuration
-├── LICENSE                      # MIT License
+├── agent_skills/
+│   └── windows-openconnector-spawn-einval/
+│       └── SKILL.md
+│
+├── agent_memory/
+│   ├── learning_journal.jsonl
+│   └── ...
+│
+├── models/
+├── tests/
+├── main.py
+├── requirements.txt
+├── pytest.ini
+├── LICENSE
 └── README.md
 ```
 
@@ -278,7 +280,7 @@ my-agent/
 ## ⚙️ Requirements
 
 - Python **3.10+**
-- [Ollama](https://ollama.com/)
+- Ollama
 - Qwen 3 1.7B
 - Git
 - Playwright + Chromium
@@ -286,54 +288,54 @@ my-agent/
 - Agent Reach CLI for Agent Reach-backed capabilities
 - Node.js for a local OpenConnector runtime
 
-> The project is designed to run locally. A paid hosted LLM API is not required for the core reasoning loop when Ollama is used.
+The core reasoning loop can run locally with Ollama without a paid hosted LLM API.
 
 ---
 
 ## 🚀 Installation
 
-### 1. Clone the repository
+### Clone My Agent
 
 ```bash
 git clone https://github.com/Fahdbenbaba/my-agent.git
 cd my-agent
 ```
 
-### 2. Install Python dependencies
+### Install Python dependencies
 
 ```bash
 python -m pip install -r requirements.txt
 ```
 
-### 3. Install Chromium for browser automation
+### Install Chromium
 
 ```bash
 python -m playwright install chromium
 ```
 
-### 4. Install / start Ollama
+### Start Ollama
 
 ```bash
 ollama pull qwen3:1.7b
 ```
 
-Make sure Ollama is running locally, normally at:
+Ensure Ollama is available at:
 
 ```text
 http://localhost:11434
 ```
 
-### 5. Optional: Agent Reach
+### Agent Reach
 
-Install and configure Agent Reach separately, then verify it with:
+Install/configure Agent Reach separately and verify:
 
 ```bash
 agent-reach doctor --json
 ```
 
-### 6. Optional: OpenConnector
+### OpenConnector
 
-OpenConnector can be run separately as a local Node.js service:
+Clone OpenConnector separately:
 
 ```bash
 git clone https://github.com/oomol-lab/open-connector.git
@@ -341,7 +343,7 @@ cd open-connector
 npm install
 ```
 
-For Windows local development, start the API runtime directly:
+On Windows, start the API runtime directly:
 
 ```bash
 npm run dev:api
@@ -353,7 +355,7 @@ The API runs on:
 http://localhost:3000
 ```
 
-In another terminal, start the web console:
+Start the local web console in another terminal:
 
 ```bash
 npm run dev --workspace web
@@ -365,19 +367,18 @@ The web console runs on:
 http://localhost:5173
 ```
 
-For GitHub OAuth, configure an OAuth application whose callback matches the local OpenConnector callback URL:
+For GitHub OAuth, configure the callback:
 
 ```text
 http://localhost:3000/oauth/callback
 ```
 
-Keep OAuth client secrets, runtime tokens, and encryption keys out of source control.
+Keep OAuth secrets and runtime encryption keys out of source control.
 
-### 7. Start My Agent
-
-From the My Agent repository:
+### Start My Agent
 
 ```bash
+cd ../my-agent
 python main.py
 ```
 
@@ -385,23 +386,33 @@ python main.py
 
 ## 🧪 Testing
 
-Run the complete suite with:
+Run the test suite with:
 
 ```bash
 python -m pytest
 ```
 
-Tests cover the core architecture, routing, Agent Reach integration, OpenConnector integration, and continuous skill learning.
-
-The skill-learning tests verify:
-
-- Saving and retrieving a learned skill
-- Secret redaction
-- Learning-intent routing
+The regression suite covers routing, Agent Reach integration, learning behavior, secret redaction, and other core skills.
 
 ---
 
 ## 💡 Example Tasks
+
+### Memory
+
+```text
+Remember that my favorite programming language is Python.
+```
+
+```text
+What is my favorite programming language?
+```
+
+### Python
+
+```text
+Run Python code: print(10 * 20)
+```
 
 ### Agent Reach
 
@@ -431,23 +442,7 @@ List connected providers
 Search OpenConnector actions for GitHub
 ```
 
-```text
-Show the GitHub provider configuration
-```
-
-```text
-Execute github.get_current_user through OpenConnector
-```
-
-### Continuous Learning
-
-```text
-Save what we just learned as a skill
-```
-
-```text
-What did we learn?
-```
+### Skill Learning
 
 ```text
 List learned skills
@@ -457,53 +452,37 @@ List learned skills
 Search learned skills for Windows spawn EINVAL
 ```
 
-When a discovery is worth preserving, the intended lifecycle is:
+After a verified debugging task:
 
 ```text
-Discover → Verify → Check existing skills → Save/update → Retrieve later
+Save what we learned as a reusable skill
 ```
 
 ---
 
-## 🛡️ Grounding, Verification & Learning Safety
-
-`EvidenceGuard` helps ensure that time-sensitive web answers are based on retrieved evidence rather than unsupported model memory.
-
-The architecture also supports verification after actions. For example, after creating a file, the agent can read the file back instead of simply trusting that creation succeeded.
-
-The continuous-learning system intentionally does **not** save every interaction. A lesson should be reusable, non-trivial, specific, and verified. It should not merely duplicate documentation or preserve a one-off fact.
-
-Learned skills are stored as Markdown rather than executable code. They are knowledge artifacts for future retrieval, not an unrestricted code-generation channel.
-
-For connected services, OpenConnector keeps provider credentials and OAuth state inside its runtime boundary. My Agent receives action metadata and execution results rather than raw provider credentials.
-
-Potentially destructive or externally side-effectful OpenConnector Actions require explicit confirmation.
-
----
-
-## 🔐 Security Notes
+## 🛡️ Security & Verification
 
 Current protections include:
 
 - Workspace restrictions for file/database operations
 - Restricted Git command handling
 - Python execution safeguards
-- Evidence filtering for selected time-sensitive queries
+- Evidence filtering for selected web queries
 - Action/result verification
-- Modular skill boundaries
+- Persistent learning journal with secret redaction
+- Learned-skill quality gates
 - Explicit confirmation for potentially side-effectful OpenConnector Actions
 - Provider credentials kept inside the OpenConnector runtime boundary
-- Secret redaction before learned knowledge is persisted
+
+For local OpenConnector deployments, enable runtime authentication and encryption before exposing the connector outside the local machine.
 
 Do not give an experimental agent unrestricted access to sensitive files, credentials, production systems, or financial accounts.
-
-For local OpenConnector deployments, enable runtime encryption and runtime authentication before exposing the connector outside your own machine.
 
 ---
 
 ## 📌 Current Status
 
-**V1 — Functional Agent Foundation + Internet + Connected Apps + Continuous Learning**
+**V1 — Functional Local Agent + Internet + Connected Apps + Verified Learning**
 
 The project currently demonstrates:
 
@@ -515,6 +494,7 @@ The project currently demonstrates:
 - Web search abstraction
 - Evidence grounding
 - Persistent vector memory
+- Persistent execution journal
 - File-system automation
 - Python execution
 - Git integration
@@ -522,44 +502,24 @@ The project currently demonstrates:
 - Agent Reach public internet integration
 - OpenConnector connected-app integration
 - OAuth-based provider connections
-- Continuous reusable-skill learning
+- Verified continuous skill learning
 - Multi-step task execution
-- Verification
 - Automated regression testing
 
-The project remains an **agent architecture prototype / learning project** rather than a production-grade unrestricted autonomous system.
+This remains a **portfolio / learning project and agent architecture prototype**, not a fully autonomous production system.
 
 ---
 
 ## 🗺️ Roadmap
 
-Future improvements can include:
-
-- [ ] Planner / task decomposition
-- [ ] Explicit task graph and dependencies
+- [ ] Better task decomposition / planner
 - [ ] Automatic retry and recovery
-- [ ] Better browser actions and page interaction
-- [ ] Richer Agent Reach channel coverage
-- [ ] Better OpenConnector action planning across multiple connected apps
-- [ ] Semantic retrieval over learned skills
-- [ ] Automatic lesson scoring and deduplication
-- [ ] Skill dependency / related-skill graph
+- [ ] Richer browser interaction
+- [ ] More Agent Reach channels
+- [ ] More OpenConnector providers and cross-app workflows
 - [ ] Stronger Python sandbox isolation
-- [ ] Continuous Integration (CI)
 - [ ] Structured execution logs / observability
 - [ ] Better tool schemas and validation
-- [ ] More comprehensive end-to-end tests
-
----
-
-## 📄 License
-
-This project is licensed under the **MIT License**. See [`LICENSE`](LICENSE) for the complete license text.
-
----
-
-## 👤 Author
-
-**JILABI.DEV**
-
-Built with Python, Ollama, Qwen, Playwright, ChromaDB, Agent Reach, OpenConnector, and a lot of experimentation. 🚀
+- [ ] More end-to-end tests
+- [ ] Automatic skill retrieval before relevant tasks
+- [ ] Skill confidence / provenance scoring
