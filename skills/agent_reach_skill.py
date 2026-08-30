@@ -26,21 +26,11 @@ class AgentReachSkill(BaseSkill):
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": [
-                            "status",
-                            "doctor",
-                            "capabilities",
-                            "read",
-                            "search",
-                            "github",
-                            "youtube",
-                            "rss",
-                        ],
-                        "description": "status/doctor/capabilities inspect Agent Reach; read reads a URL; search searches the web; github searches or reads public GitHub content; youtube searches or inspects YouTube; rss reads a feed.",
+                        "enum": ["status", "doctor", "capabilities", "read", "search", "github", "youtube", "rss"],
                     },
-                    "url": {"type": "string", "description": "Public URL for read, youtube, or rss actions."},
-                    "query": {"type": "string", "description": "Search query for search, github, or youtube actions."},
-                    "max_results": {"type": "integer", "description": "Maximum number of results for search actions (1-10)."},
+                    "url": {"type": "string"},
+                    "query": {"type": "string"},
+                    "max_results": {"type": "integer", "description": "Maximum number of results (1-10)."},
                 },
                 "required": ["action"],
             },
@@ -48,12 +38,12 @@ class AgentReachSkill(BaseSkill):
     }
 
     CAPABILITIES = {
-        "web": "Read public web pages through Jina Reader (the configured Agent Reach web backend).",
+        "web": "Read public web pages through Jina Reader.",
         "youtube": "Search YouTube with yt-dlp and inspect public video metadata.",
         "rss": "Read RSS and Atom feeds with feedparser.",
-        "github": "Search public GitHub repositories and read public repository pages/files without requiring gh CLI.",
-        "search": "Use the agent's configured web-search providers; falls back to the existing web_search skill when Agent Reach semantic search is unavailable.",
-        "social": "Optional social channels depend on the local Agent Reach configuration and login state.",
+        "github": "Search public GitHub repositories and read public GitHub pages.",
+        "search": "Use the agent web-search provider abstraction.",
+        "social": "Optional social channels depend on local configuration and login state.",
     }
 
     @staticmethod
@@ -61,8 +51,16 @@ class AgentReachSkill(BaseSkill):
         return shutil.which("agent-reach") or shutil.which("agent-reach.exe")
 
     @staticmethod
-    def _run_command(command, timeout=120):
-        """Run a command in binary mode and decode explicitly to avoid Windows cp1252 failures."""
+    def _decode_output(value):
+        if value is None:
+            return ""
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace").strip()
+        return str(value).strip()
+
+    @classmethod
+    def _run_command(cls, command, timeout=120):
+        """Run in binary mode and decode explicitly; also supports mocked text output in tests."""
         try:
             completed = subprocess.run(
                 command,
@@ -72,8 +70,8 @@ class AgentReachSkill(BaseSkill):
                 timeout=timeout,
                 shell=False,
             )
-            stdout = (completed.stdout or b"").decode("utf-8", errors="replace").strip()
-            stderr = (completed.stderr or b"").decode("utf-8", errors="replace").strip()
+            stdout = cls._decode_output(completed.stdout)
+            stderr = cls._decode_output(completed.stderr)
             return completed.returncode, stdout or stderr
         except subprocess.TimeoutExpired:
             return 124, "Command timed out."
@@ -90,9 +88,12 @@ class AgentReachSkill(BaseSkill):
         url = str(url).strip()
         if not re.match(r"^https?://", url, re.I):
             return "Agent Reach Error: read requires an http(s) URL."
-        jina_url = "https://r.jina.ai/" + url
         try:
-            text = self._http_get(jina_url, timeout=45, headers={"User-Agent": "Mozilla/5.0 my-agent/1.0"})
+            text = self._http_get(
+                "https://r.jina.ai/" + url,
+                timeout=45,
+                headers={"User-Agent": "Mozilla/5.0 my-agent/1.0"},
+            )
             return f"AGENT_REACH_WEB_SUCCESS\nURL: {url}\nCONTENT:\n{text[:20000]}"
         except Exception as exc:
             return f"AGENT_REACH_WEB_ERROR\nURL: {url}\nERROR: {exc}"
@@ -115,7 +116,13 @@ class AgentReachSkill(BaseSkill):
         encoded = urllib.parse.quote(query)
         api_url = f"https://api.github.com/search/repositories?q={encoded}&per_page={max_results}"
         try:
-            payload = json.loads(self._http_get(api_url, timeout=30, headers={"Accept": "application/vnd.github+json", "User-Agent": "my-agent/1.0"}))
+            payload = json.loads(
+                self._http_get(
+                    api_url,
+                    timeout=30,
+                    headers={"Accept": "application/vnd.github+json", "User-Agent": "my-agent/1.0"},
+                )
+            )
             items = payload.get("items", [])
             if not items:
                 return f"AGENT_REACH_GITHUB\nQUERY: {query}\nNo public repositories found."
@@ -141,7 +148,10 @@ class AgentReachSkill(BaseSkill):
             if not query:
                 return "Agent Reach Error: youtube requires a query or URL."
             target = f"ytsearch{max_results}:{query}"
-        code, output = self._run_command([executable, "--dump-single-json", "--flat-playlist", "--skip-download", target], timeout=120)
+        code, output = self._run_command(
+            [executable, "--dump-single-json", "--flat-playlist", "--skip-download", target],
+            timeout=120,
+        )
         if code != 0:
             return f"AGENT_REACH_YOUTUBE_ERROR\n{output[:12000]}"
         try:
