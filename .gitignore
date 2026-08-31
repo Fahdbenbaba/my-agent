@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+*.db
+*.sqlite3
+agent_memory/
+test.db
+test.txt
+python_latest.txt
+
+# Local/runtime integrations
+open-connector/
+Agent-Reach/
