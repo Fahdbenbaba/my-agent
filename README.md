@@ -36,6 +36,7 @@ The core design principle is:
 | ✔️ Action Verification | ✅ Working |
 | 📝 Persistent Execution Journal | ✅ Working |
 | 🧪 Automated Tests | ✅ Working |
+| 🧠 Verified Recovery Auto-Learning | ✅ Integrated |
 
 ---
 
@@ -73,6 +74,24 @@ The agent should consider creating a skill after:
 - verified integration/configuration fixes
 
 It should **not** turn ordinary documentation lookups or one-off facts into skills.
+
+### Automatic verified recovery learning
+
+The agent can now proactively capture a reusable lesson when a concrete tool failure is followed by a verified recovery. The automatic capture still passes through the dedicated learning skill's evidence and quality gates, so speculative fixes are rejected and secrets are redacted before persistence.
+
+This makes the learning flow:
+
+```text
+Verified failure
+      ↓
+Recovery / workaround
+      ↓
+Verified successful execution
+      ↓
+Automatic lesson capture
+      ↓
+Reusable SKILL.md
+```
 
 ### Quality gates
 
@@ -137,6 +156,8 @@ Supported integration areas include:
 - Provider Action execution
 - Named connection selection
 - Confirmation gates for potentially side-effectful operations
+
+Recent work also added routing/test coverage for OpenConnector action execution and runtime catalog behavior.
 
 Local development runtime:
 
@@ -219,6 +240,7 @@ list    → list learned skills
 search  → search learned skills
 save    → save a verified reusable lesson
 get     → retrieve one learned skill
+auto_capture → automatically preserve a verified recovery lesson
 ```
 
 Example:
@@ -272,8 +294,11 @@ my-agent/
 ├── requirements.txt
 ├── pytest.ini
 ├── LICENSE
+├── .gitignore
 └── README.md
 ```
+
+Runtime-generated files such as Python caches, pytest caches, local databases, the persistent runtime memory store, and local Agent Reach/OpenConnector checkouts are excluded from source control by `.gitignore`.
 
 ---
 
@@ -392,7 +417,7 @@ Run the test suite with:
 python -m pytest
 ```
 
-The regression suite covers routing, Agent Reach integration, learning behavior, secret redaction, and other core skills.
+The regression suite covers routing, Agent Reach integration, learning behavior, secret redaction, OpenConnector paths, and other core skills.
 
 ---
 
@@ -458,6 +483,8 @@ After a verified debugging task:
 Save what we learned as a reusable skill
 ```
 
+The agent can also automatically preserve a verified recovery when the execution journal contains enough evidence.
+
 ---
 
 ## 🛡️ Security & Verification
@@ -473,6 +500,7 @@ Current protections include:
 - Learned-skill quality gates
 - Explicit confirmation for potentially side-effectful OpenConnector Actions
 - Provider credentials kept inside the OpenConnector runtime boundary
+- Runtime artifacts and local integration checkouts excluded from Git tracking
 
 For local OpenConnector deployments, enable runtime authentication and encryption before exposing the connector outside the local machine.
 
@@ -503,6 +531,7 @@ The project currently demonstrates:
 - OpenConnector connected-app integration
 - OAuth-based provider connections
 - Verified continuous skill learning
+- Automatic capture of verified recovery lessons
 - Multi-step task execution
 - Automated regression testing
 
